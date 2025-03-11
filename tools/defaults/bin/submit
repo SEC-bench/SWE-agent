@@ -1,0 +1,24 @@
+main() {
+    base_dir="$1"
+    if [ -n "$base_dir" ]; then
+        cd "$base_dir" || { echo "Failed to change directory to $base_dir"; exit 1; }
+    else
+        echo "No base directory provided"
+        echo "Usage: submit_patch <base_dir>"
+        exit 1
+    fi
+
+    # Add all files except *.dep files
+    git add -A
+    git reset -- "*.dep" 2>/dev/null || true
+
+    # Create the patch file
+    git diff --cached > /root/model.patch
+
+    # Output the submission markers and patch content
+    echo "<<SWE_AGENT_SUBMISSION>>"
+    cat /root/model.patch
+    echo "<<SWE_AGENT_SUBMISSION>>"
+}
+
+main "$@"

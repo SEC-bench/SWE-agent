@@ -207,13 +207,20 @@ class ToolHandler:
         self.logger.info("Resetting tools")
         env.set_env_variables(self.config.env_variables)
         env.write_file("/root/.swe-agent-env", json.dumps(self.config.registry_variables))
-        env.communicate(" && ".join(self._reset_commands), check="raise", timeout=self.config.install_timeout)
+        env.communicate(
+            " && ".join(self._reset_commands),
+            check="raise",
+            timeout=self.config.install_timeout,
+        )
 
     async def _upload_bundles(self, env: SWEEnv) -> None:
         await asyncio.gather(
             *(
                 env.deployment.runtime.upload(
-                    UploadRequest(source_path=bundle.path.as_posix(), target_path=f"/root/tools/{bundle.path.name}")
+                    UploadRequest(
+                        source_path=bundle.path.as_posix(),
+                        target_path=f"/root/tools/{bundle.path.name}",
+                    )
                 )
                 for bundle in self.config.bundles
             )

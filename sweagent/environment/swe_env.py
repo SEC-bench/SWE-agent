@@ -6,7 +6,11 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 from swerex.deployment.abstract import AbstractDeployment
-from swerex.deployment.config import DeploymentConfig, DockerDeploymentConfig, get_deployment
+from swerex.deployment.config import (
+    DeploymentConfig,
+    DockerDeploymentConfig,
+    get_deployment,
+)
 from swerex.runtime.abstract import (
     BashAction,
     BashInterruptAction,
@@ -142,14 +146,22 @@ class SWEEnv:
             info: additional information (e.g. debugging information)
         """
         self.communicate(input="cd /", check="raise")
-        self._copy_repo()
-        self._reset_repository()
+        if "osv-" in self.name or "cve-" in self.name:
+            # NOTE: Heuristic to skip repository copy for SEC-bench instances
+            self.logger.info("Skipping repository copy for SEC-bench instances")
+        else:
+            self._copy_repo()
+            self._reset_repository()
         self._chook.on_environment_startup()
 
     def _reset_repository(self) -> None:
         """Clean repository of any modifications + Checkout base commit"""
         if self.repo is not None:
-            self.logger.debug("Resetting repository %s to commit %s", self.repo.repo_name, self.repo.base_commit)
+            self.logger.debug(
+                "Resetting repository %s to commit %s",
+                self.repo.repo_name,
+                self.repo.base_commit,
+            )
             startup_commands = [
                 f"cd /{self.repo.repo_name}",
                 "export ROOT=$(pwd -P)",
@@ -228,7 +240,12 @@ class SWEEnv:
                 raise RuntimeError(msg)
         return output
 
-    def read_file(self, path: str | PurePath, encoding: str | None = None, errors: str | None = None) -> str:
+    def read_file(
+        self,
+        path: str | PurePath,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
         """Read file contents from container
 
         Args:

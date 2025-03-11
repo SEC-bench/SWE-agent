@@ -13,8 +13,15 @@ from swerex.deployment.config import (
 )
 from typing_extensions import Self
 
-from sweagent.agent.problem_statement import ProblemStatementConfig, TextProblemStatement
-from sweagent.environment.repo import GithubRepoConfig, LocalRepoConfig, PreExistingRepoConfig
+from sweagent.agent.problem_statement import (
+    ProblemStatementConfig,
+    TextProblemStatement,
+)
+from sweagent.environment.repo import (
+    GithubRepoConfig,
+    LocalRepoConfig,
+    PreExistingRepoConfig,
+)
 from sweagent.environment.swe_env import EnvironmentConfig
 from sweagent.utils.files import load_file
 from sweagent.utils.log import get_logger
@@ -58,7 +65,11 @@ def _slice_spec_to_slice(slice_spec: str) -> slice:
 
 
 def _filter_batch_items(
-    instances: list[BatchInstance], *, filter_: str, slice_: str = "", shuffle: bool = False
+    instances: list[BatchInstance],
+    *,
+    filter_: str,
+    slice_: str = "",
+    shuffle: bool = False,
 ) -> list[BatchInstance]:
     if shuffle:
         instances = sorted(instances.copy(), key=lambda x: x.problem_statement.id)
@@ -75,6 +86,19 @@ def _filter_batch_items(
         if before_filter != after_slice:
             logger.info("Instance slice: %d -> %d instances", before_filter, after_slice)
     return instances
+
+
+def _normalize_work_dir(work_dir: str) -> str:
+    """Normalize the work_dir path for consistency.
+
+    For paths starting with /src, we ensure we only keep the main project directory
+    to be used as the repo_name.
+    """
+    if work_dir.startswith("/src"):
+        parts = work_dir.split("/")
+        if len(parts) > 2 and parts[2]:
+            return "/src/" + parts[2]
+    return work_dir
 
 
 class SimpleBatchInstance(BaseModel):
@@ -112,6 +136,10 @@ class SimpleBatchInstance(BaseModel):
             repo = None
         elif "github" in self.repo_name:
             repo = GithubRepoConfig(github_url=self.repo_name, base_commit=self.base_commit)
+        elif self.repo_name.startswith("/src/"):
+            # For paths starting with /src/, create a PreExistingRepoConfig with the full path
+            # This preserves the entire path including /src/ prefix
+            repo = PreExistingRepoConfig(repo_name=self.repo_name, base_commit=self.base_commit)
         elif "/" not in self.repo_name:
             repo = PreExistingRepoConfig(repo_name=self.repo_name, base_commit=self.base_commit)
         else:
@@ -121,16 +149,22 @@ class SimpleBatchInstance(BaseModel):
                 msg = "Local deployment does not support image_name"
                 raise ValueError(msg)
             return BatchInstance(
-                env=EnvironmentConfig(deployment=deployment, repo=repo), problem_statement=problem_statement
+                env=EnvironmentConfig(deployment=deployment, repo=repo),
+                problem_statement=problem_statement,
             )
         if isinstance(deployment, DummyDeploymentConfig):
             return BatchInstance(
-                env=EnvironmentConfig(deployment=deployment, repo=repo), problem_statement=problem_statement
+                env=EnvironmentConfig(deployment=deployment, repo=repo),
+                problem_statement=problem_statement,
             )
         deployment.image = self.image_name  # type: ignore
-        deployment.python_standalone_dir = "/root"  # type: ignore
+        deployment.python_standalone_dir = None if self.image_name.startswith("hwiwonlee/") else "/root"  # type: ignore
+        deployment.docker_args = (  # type: ignore
+            ["--security-opt", "seccomp=unconfined"] if self.image_name.startswith("hwiwonlee/") else []
+        )
         return BatchInstance(
-            env=EnvironmentConfig(deployment=deployment, repo=repo), problem_statement=problem_statement
+            env=EnvironmentConfig(deployment=deployment, repo=repo),
+            problem_statement=problem_statement,
         )
 
     @classmethod
@@ -147,6 +181,24 @@ class SimpleBatchInstance(BaseModel):
             problem_statement=instance["problem_statement"],
             id=iid,
             repo_name="testbed",
+            base_commit=instance["base_commit"],
+        )
+
+    @classmethod
+    def from_secbench(cls, instance: dict[str, Any]) -> Self:
+        """Convert instances from the secbench dataset to the `SimpleBatchInstance` format."""
+        iid = instance["instance_id"]
+        # Get work_dir from instance
+        work_dir = _normalize_work_dir(instance["work_dir"])
+        image_name = f"hwiwonlee/secb.x86_64.{iid}:v0.1"  # When deployment, the tag should be changed to `verified`
+        bug_description = instance["bug_description"]
+        problem_statement = f"Can you help me implement the necessary changes to the repository so that the crash points specified in the following bug description are fixed?\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\nYour task is to make the minimal changes to non-tests files in the {work_dir} Git repository directory to ensure the crash points specified in the sanitizer report are not triggered."
+
+        return cls(
+            image_name=image_name,
+            problem_statement=problem_statement,
+            id=iid,
+            repo_name=work_dir,
             base_commit=instance["base_commit"],
         )
 
@@ -309,4 +361,51 @@ class ExpertInstancesFromFile(BaseModel, AbstractInstanceSource):
         return self.path.stem
 
 
-BatchInstanceSourceConfig = InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile
+class SecBenchInstances(BaseModel, AbstractInstanceSource):
+    """Load instances from SecBench."""
+
+    dataset_name: str
+    """Name of the HuggingFace dataset. Same as when using `datasets.load_dataset`."""
+    split: str = "test"
+    filter: str = ".*"
+    """Regular expression to filter the instances by instance id."""
+    slice: str = ""
+    """Select only a slice of the instances (after filtering by `filter`).
+    Possible values are stop or start:stop or start:stop:step.
+    (i.e., it behaves exactly like python's list slicing `list[slice]`).
+    """
+    shuffle: bool = False
+    """Shuffle the instances (before filtering and slicing)."""
+
+    type: Literal["secbench"] = "secbench"
+    """Discriminator for (de)serialization/CLI. Do not change."""
+
+    deployment: DeploymentConfig = Field(
+        default_factory=lambda: DockerDeploymentConfig(image="python:3.11"),
+    )
+
+    def get_instance_configs(self) -> list[BatchInstance]:
+        from datasets import load_dataset
+
+        ds: list[dict[str, Any]] = load_dataset(self.dataset_name, split=self.split)  # type: ignore
+        instances = []
+        for instance in ds:
+            try:
+                si = SimpleBatchInstance.from_secbench(instance)
+                instances.append(si.to_full_batch_instance(self.deployment))
+            except ValueError as e:
+                logger.error(
+                    "Skipping instance %s due to docker build failure: %s",
+                    instance.get("instance_id"),
+                    e,
+                )
+        return _filter_batch_items(instances, filter_=self.filter, slice_=self.slice, shuffle=self.shuffle)
+
+    @property
+    def id(self) -> str:
+        return f"secbench_{self.split}"
+
+
+BatchInstanceSourceConfig = (
+    InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile | SecBenchInstances
+)
