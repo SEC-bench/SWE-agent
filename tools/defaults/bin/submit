@@ -12,7 +12,7 @@ main() {
     git add -A
 
     # Create the patch file
-    git diff --cached ':(exclude)*.dep' ':(exclude)*.yml' ':(exclude)*.md' ':(exclude)*.txt' > /root/model.patch
+    git diff --cached '*.c' '*.cpp' '*.h' '*.hpp' '*.cc' '*.hh' > /root/model.patch
 
     # Output the submission markers and patch content
     echo "<<SWE_AGENT_SUBMISSION>>"
