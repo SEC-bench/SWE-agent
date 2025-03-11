@@ -192,7 +192,7 @@ class SimpleBatchInstance(BaseModel):
         work_dir = _normalize_work_dir(instance["work_dir"])
         image_name = f"hwiwonlee/secb.x86_64.{iid}:v0.1"  # When deployment, the tag should be changed to `verified`
         bug_description = instance["bug_description"]
-        problem_statement = f"Can you help me implement the necessary changes to the repository so that the crash points specified in the following bug description are fixed?\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\nYour task is to make the minimal changes to non-tests files in the {work_dir} Git repository directory to ensure the crash points specified in the sanitizer report are not triggered."
+        problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\nYour task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
 
         return cls(
             image_name=image_name,
