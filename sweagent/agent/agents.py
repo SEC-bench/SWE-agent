@@ -12,12 +12,21 @@ import yaml
 from jinja2 import Template
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from simple_parsing.helpers.fields import field
-from swerex.exceptions import BashIncorrectSyntaxError, CommandTimeoutError, SwerexException
+from swerex.exceptions import (
+    BashIncorrectSyntaxError,
+    CommandTimeoutError,
+    SwerexException,
+)
 from tenacity import RetryError
 from typing_extensions import Self
 from unidiff import UnidiffParseError
 
-from sweagent import __version__, get_agent_commit_hash, get_rex_commit_hash, get_rex_version
+from sweagent import (
+    __version__,
+    get_agent_commit_hash,
+    get_rex_commit_hash,
+    get_rex_version,
+)
 from sweagent.agent.action_sampler import AbstractActionSampler, ActionSamplerConfig
 from sweagent.agent.history_processors import DefaultHistoryProcessor, HistoryProcessor
 from sweagent.agent.hooks.abstract import AbstractAgentHook, CombinedAgentHook
@@ -50,7 +59,13 @@ from sweagent.tools.parsing import (
     ThoughtActionParser,
 )
 from sweagent.tools.tools import ToolConfig, ToolHandler
-from sweagent.types import AgentInfo, AgentRunResult, StepOutput, Trajectory, TrajectoryStep
+from sweagent.types import (
+    AgentInfo,
+    AgentRunResult,
+    StepOutput,
+    Trajectory,
+    TrajectoryStep,
+)
 from sweagent.utils.config import _convert_paths_to_abspath, _strip_abspath_from_dict
 from sweagent.utils.jinja_warnings import _warn_probably_wrong_jinja_syntax
 from sweagent.utils.log import get_logger
@@ -246,7 +261,10 @@ class RetryAgent(AbstractAgent):
         self._hooks.append(hook)
 
     def setup(
-        self, env: SWEEnv, problem_statement: ProblemStatement | ProblemStatementConfig, output_dir: Path = Path(".")
+        self,
+        env: SWEEnv,
+        problem_statement: ProblemStatement | ProblemStatementConfig,
+        output_dir: Path = Path("."),
     ) -> None:
         """Setup the retry agent for a new problem instance.
         This is mostly a bookkeeping step.
@@ -264,7 +282,10 @@ class RetryAgent(AbstractAgent):
         agent_config = self.config.agent_configs[self._i_attempt % len(self.config.agent_configs)].model_copy(deep=True)
         remaining_budget = self.config.retry_loop.cost_limit - self._total_instance_stats.instance_cost
         if remaining_budget < agent_config.model.per_instance_cost_limit:
-            self.logger.debug("Setting agent per-attempt cost limit to remaining budget: %s", remaining_budget)
+            self.logger.debug(
+                "Setting agent per-attempt cost limit to remaining budget: %s",
+                remaining_budget,
+            )
             agent_config.model.per_instance_cost_limit = remaining_budget
         self._agent = DefaultAgent.from_config(agent_config)
         for hook in self._hooks:
@@ -273,7 +294,11 @@ class RetryAgent(AbstractAgent):
         sub_agent_output_dir = self._output_dir / f"attempt_{self._i_attempt}"
         assert self._problem_statement is not None
         assert self._env is not None
-        self._agent.setup(env=self._env, problem_statement=self._problem_statement, output_dir=sub_agent_output_dir)
+        self._agent.setup(
+            env=self._env,
+            problem_statement=self._problem_statement,
+            output_dir=sub_agent_output_dir,
+        )
         return self._agent
 
     def _next_attempt(self) -> None:
@@ -327,7 +352,10 @@ class RetryAgent(AbstractAgent):
             except TotalCostLimitExceededError:
                 raise
             except Exception as e:
-                self.logger.critical(f"Error getting best attempt index: {e}. Setting to 0.", exc_info=True)
+                self.logger.critical(
+                    f"Error getting best attempt index: {e}. Setting to 0.",
+                    exc_info=True,
+                )
                 best_attempt_idx = 0
             data |= copy.deepcopy(self._attempt_data[best_attempt_idx])  # type: ignore
             data["info"]["best_attempt_idx"] = best_attempt_idx
@@ -559,7 +587,12 @@ class DefaultAgent(AbstractAgent):
         system_msg = Template(self.templates.system_template).render(**self._get_format_dict())
         self.logger.info(f"SYSTEM ({self.name})\n{system_msg}")
         self._append_history(
-            {"role": "system", "content": system_msg, "agent": self.name, "message_type": "system_prompt"}
+            {
+                "role": "system",
+                "content": system_msg,
+                "agent": self.name,
+                "message_type": "system_prompt",
+            }
         )
 
     def add_demonstrations_to_history(self) -> None:
@@ -621,7 +654,10 @@ class DefaultAgent(AbstractAgent):
         )
 
     def _add_templated_messages_to_history(
-        self, templates: list[str], tool_call_ids: list[str] | None = None, **kwargs: str | int | None
+        self,
+        templates: list[str],
+        tool_call_ids: list[str] | None = None,
+        **kwargs: str | int | None,
     ) -> None:
         """Populate selected template(s) with information (e.g., issue, arguments, state)
         and add to history.
@@ -735,7 +771,11 @@ class DefaultAgent(AbstractAgent):
         self.traj_path.write_text(json.dumps(data, indent=2))
 
     def get_model_requery_history(
-        self, error_template: str, *, output: str, **kwargs: str | int | float | bool | None
+        self,
+        error_template: str,
+        *,
+        output: str,
+        **kwargs: str | int | float | bool | None,
     ) -> list[dict[str, str]]:
         """Ask the model to correct after a hitting one of the following errors:
 
@@ -801,7 +841,7 @@ class DefaultAgent(AbstractAgent):
         repo_name = "/"
         if self._env.repo is not None:
             repo_name = f"/{self._env.repo.repo_name}"
-        submission_command = "git add -A && git diff --cached > /root/model.patch"
+        submission_command = "git add -A && git diff --cached ':(exclude)*.dep' ':(exclude)*.yml' ':(exclude)*.md' ':(exclude)*.txt' > /root/model.patch"
         self.logger.info("Executing submission command %s in %s", submission_command, repo_name)
         try:
             self._env.execute_command(submission_command, check=True, cwd=repo_name)
@@ -920,7 +960,11 @@ class DefaultAgent(AbstractAgent):
                 self._env.interrupt_session()
                 self._n_consecutive_timeouts += 1
             except Exception as f:
-                self.logger.exception("Failed to interrupt session after command timeout: %s", f, exc_info=True)
+                self.logger.exception(
+                    "Failed to interrupt session after command timeout: %s",
+                    f,
+                    exc_info=True,
+                )
                 raise
             step.observation = Template(self.templates.command_cancelled_timeout_template).render(
                 **self._get_format_dict(),
@@ -1025,7 +1069,11 @@ class DefaultAgent(AbstractAgent):
 
         def handle_error_with_retry(exception: Exception, template: str, n_requeries: int) -> list[dict[str, str]]:
             """Requeries the model if the error is a format/blocklist/bash syntax error."""
-            self.logger.warning("Requerying model after %s (%dth requery)", type(exception).__name__, n_requeries)
+            self.logger.warning(
+                "Requerying model after %s (%dth requery)",
+                type(exception).__name__,
+                n_requeries,
+            )
             step: StepOutput = getattr(exception, "step", StepOutput())
             self.add_step_to_trajectory(step)
             exception_message = getattr(exception, "message", "")
@@ -1056,12 +1104,16 @@ class DefaultAgent(AbstractAgent):
             except FormatError as e:
                 n_format_fails += 1
                 history = handle_error_with_retry(
-                    exception=e, template=self.tools.config.format_error_template, n_requeries=n_format_fails
+                    exception=e,
+                    template=self.tools.config.format_error_template,
+                    n_requeries=n_format_fails,
                 )
             except _BlockedActionError as e:
                 n_format_fails += 1
                 history = handle_error_with_retry(
-                    exception=e, template=self.tools.config.filter.blocklist_error_template, n_requeries=n_format_fails
+                    exception=e,
+                    template=self.tools.config.filter.blocklist_error_template,
+                    n_requeries=n_format_fails,
                 )
             except ContentPolicyViolationError:
                 self.logger.warning("Content policy violation, trying to resample")
@@ -1094,7 +1146,10 @@ class DefaultAgent(AbstractAgent):
                 )
 
             except CommandTimeoutError:
-                self.logger.exception("Exiting due to multiple consecutive command timeouts", exc_info=True)
+                self.logger.exception(
+                    "Exiting due to multiple consecutive command timeouts",
+                    exc_info=True,
+                )
                 return handle_error_with_autosubmission(
                     "exit_command_timeout",
                     "Exit due to multiple consecutive command timeouts",
