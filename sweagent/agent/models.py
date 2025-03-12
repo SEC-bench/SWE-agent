@@ -45,7 +45,8 @@ except ImportError:
     readline = None
 
 litellm.suppress_debug_info = True
-
+# Compatible with o1-family models
+litellm.drop_params = True
 
 _THREADS_THAT_USED_API_KEYS = []
 """Keeps track of thread orders so that we can choose the same API key for the same thread."""
