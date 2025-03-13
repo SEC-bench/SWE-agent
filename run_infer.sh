@@ -6,22 +6,24 @@ TEMPERATURE=0.2
 SPLIT="test"
 SLICE=":1"
 API_BASE=""
+CALL_LIMIT=30
 
 # Help function
 show_help() {
-    echo "Usage: $0 -m <model> [-c <cost_limit>] [-t <temperature>] [-s <split>] [-l <slice>] [-b <api_base_url>]"
+    echo "Usage: $0 -m <model> [-c <cost_limit>] [-t <temperature>] [-s <split>] [-l <slice>] [-b <api_base_url>] [-n <call_limit>]"
     echo "  -m: Model name (sonnet, haiku, 4o, o1, human)"
     echo "  -c: Cost limit (default: 0.2)"
     echo "  -t: Temperature (default: 0.2)"
     echo "  -s: Split (default: cve)"
     echo "  -l: Slice (default: 1:2)"
     echo "  -b: API Base URL (optional)"
+    echo "  -n: Per instance call limit (default: 30)"
     echo "  -h: Show this help message"
     exit 1
 }
 
 # Parse command line arguments
-while getopts "m:c:t:s:l:b:h" opt; do
+while getopts "m:c:t:s:l:b:n:h" opt; do
     case $opt in
         m) MODEL="$OPTARG";;
         c) COST_LIMIT="$OPTARG";;
@@ -29,6 +31,7 @@ while getopts "m:c:t:s:l:b:h" opt; do
         s) SPLIT="$OPTARG";;
         l) SLICE="$OPTARG";;
         b) API_BASE="$OPTARG";;
+        n) CALL_LIMIT="$OPTARG";;
         h) show_help;;
         \?) show_help;;
     esac
@@ -72,6 +75,7 @@ CMD="sweagent run-batch \
     --agent.model.name $MODEL_NAME \
     --agent.model.temperature $TEMPERATURE \
     --agent.model.top_p 0.95 \
+    --agent.model.per_instance_call_limit $CALL_LIMIT \
     --agent.model.per_instance_cost_limit $COST_LIMIT \
     --agent.model.delay 1.0 \
     --instances.type secbench \
