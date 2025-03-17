@@ -12,7 +12,7 @@ from sweagent.utils.log import get_logger
 
 logger = get_logger("secb-eval", emoji="📊")
 
-TAG = "v0.1"
+TAG = "v0.2"
 
 
 @dataclass

@@ -27,6 +27,7 @@ from sweagent.utils.files import load_file
 from sweagent.utils.log import get_logger
 
 logger = get_logger("swea-config", emoji="🔧")
+TAG = "v0.2"
 
 
 class AbstractInstanceSource(ABC):
@@ -190,7 +191,7 @@ class SimpleBatchInstance(BaseModel):
         iid = instance["instance_id"]
         # Get work_dir from instance
         work_dir = _normalize_work_dir(instance["work_dir"])
-        image_name = f"hwiwonlee/secb.x86_64.{iid}:v0.1"  # When deployment, the tag should be changed to `verified`
+        image_name = f"hwiwonlee/secb.x86_64.{iid}:{TAG}"  # When deployment, the tag should be changed to `verified`
         bug_description = instance["bug_description"]
         problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\nYour task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
 
