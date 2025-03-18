@@ -7,6 +7,7 @@ from pathlib import Path
 
 import docker
 from datasets import load_dataset
+from docker import errors as docker_errors
 
 from sweagent.utils.log import get_logger
 
@@ -127,13 +128,55 @@ fi
     """
             logger.info(f"Running docker container with image: {docker_image} using multi-step script")
 
-            container = client.containers.create(
-                image=docker_image,
-                command=["bash", "-c", script],
-                working_dir=work_dir,
-                security_opt=["seccomp=unconfined"],
-                volumes={tmp_dir: {"bind": "/patch", "mode": "rw"}},
-            )
+            try:
+                container = client.containers.create(
+                    image=docker_image,
+                    command=["bash", "-c", script],
+                    working_dir=work_dir,
+                    security_opt=["seccomp=unconfined"],
+                    volumes={tmp_dir: {"bind": "/patch", "mode": "rw"}},
+                )
+            except docker_errors.ImageNotFound:
+                logger.info(f"Image {docker_image} not found locally. Attempting to pull...")
+                try:
+                    client.images.pull(docker_image)
+                    logger.info(f"Successfully pulled image: {docker_image}")
+                    # Retry container creation after pulling the image
+                    container = client.containers.create(
+                        image=docker_image,
+                        command=["bash", "-c", script],
+                        working_dir=work_dir,
+                        security_opt=["seccomp=unconfined"],
+                        volumes={tmp_dir: {"bind": "/patch", "mode": "rw"}},
+                    )
+                except Exception as e:
+                    error_msg = f"Failed to pull image {docker_image}: {str(e)}"
+                    logger.error(error_msg)
+                    results.append(
+                        PatchResult(
+                            instance_id=instance_id,
+                            success=False,
+                            reason=error_msg,
+                            git_patch=model_patch,
+                            exit_code=1,
+                            logs=error_msg,
+                        )
+                    )
+                    continue
+            except Exception as e:
+                error_msg = f"Failed to create container with image {docker_image}: {str(e)}"
+                logger.error(error_msg)
+                results.append(
+                    PatchResult(
+                        instance_id=instance_id,
+                        success=False,
+                        reason=error_msg,
+                        git_patch=model_patch,
+                        exit_code=1,
+                        logs=error_msg,
+                    )
+                )
+                continue
 
             container.start()
             exit_result = container.wait()
