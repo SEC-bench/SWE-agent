@@ -14,7 +14,7 @@ agent:
       No interactive commands (python, vim) are allowed - write scripts instead.
 
       ## KEY TIPS:
-      1. If a command fails, modify it before trying again
+      1. If a command fails, check if the current directory is the repository root directory
       2. Use `goto <line_number>` to navigate large files efficiently
       3. Always check the current open file and working directory before commands
       4. Verify code after editing to ensure correct syntax and indentation
@@ -52,7 +52,7 @@ agent:
       - path: tools/change
     enable_bash_tool: true
     parse_function:
-      type: function_calling
+      type: thought_action
   history_processors:
     - type: last_n_observations
       n: 5
