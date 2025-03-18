@@ -570,6 +570,78 @@ class LiteLLMModel(AbstractModel):
         self.lm_provider = litellm.model_cost.get(self.config.name, {}).get("litellm_provider")
         self.logger = get_logger("swea-lm", emoji="🤖")
 
+        litellm.register_model(
+            {
+                "gemini-2.0-flash-exp": {
+                    "max_tokens": 8192,
+                    "max_input_tokens": 1048576,
+                    "max_output_tokens": 8192,
+                    "max_images_per_prompt": 3000,
+                    "max_videos_per_prompt": 10,
+                    "max_video_length": 1,
+                    "max_audio_length_hours": 8.4,
+                    "max_audio_per_prompt": 1,
+                    "max_pdf_size_mb": 30,
+                    "input_cost_per_image": 0,
+                    "input_cost_per_video_per_second": 0,
+                    "input_cost_per_audio_per_second": 0,
+                    "input_cost_per_token": 0,
+                    "input_cost_per_character": 0,
+                    "input_cost_per_token_above_128k_tokens": 0,
+                    "input_cost_per_character_above_128k_tokens": 0,
+                    "input_cost_per_image_above_128k_tokens": 0,
+                    "input_cost_per_video_per_second_above_128k_tokens": 0,
+                    "input_cost_per_audio_per_second_above_128k_tokens": 0,
+                    "output_cost_per_token": 0,
+                    "output_cost_per_character": 0,
+                    "output_cost_per_token_above_128k_tokens": 0,
+                    "output_cost_per_character_above_128k_tokens": 0,
+                    "litellm_provider": "openai",
+                    "mode": "chat",
+                    "supports_system_messages": True,
+                    "supports_function_calling": True,
+                    "supports_vision": True,
+                    "supports_response_schema": True,
+                    "supports_audio_output": True,
+                    "source": "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                    "supports_tool_choice": True,
+                }
+            }
+        )
+
+        litellm.register_model(
+            {
+                "gemini-1.5-pro": {
+                    "max_tokens": 8192,
+                    "max_input_tokens": 2097152,
+                    "max_output_tokens": 8192,
+                    "input_cost_per_image": 0.00032875,
+                    "input_cost_per_audio_per_second": 0.00003125,
+                    "input_cost_per_video_per_second": 0.00032875,
+                    "input_cost_per_token": 0.00000125,
+                    "input_cost_per_character": 0.0000003125,
+                    "input_cost_per_image_above_128k_tokens": 0.0006575,
+                    "input_cost_per_video_per_second_above_128k_tokens": 0.0006575,
+                    "input_cost_per_audio_per_second_above_128k_tokens": 0.0000625,
+                    "input_cost_per_token_above_128k_tokens": 0.0000025,
+                    "input_cost_per_character_above_128k_tokens": 0.000000625,
+                    "output_cost_per_token": 0.000005,
+                    "output_cost_per_character": 0.00000125,
+                    "output_cost_per_token_above_128k_tokens": 0.00001,
+                    "output_cost_per_character_above_128k_tokens": 0.0000025,
+                    "litellm_provider": "openai",
+                    "mode": "chat",
+                    "supports_vision": True,
+                    "supports_pdf_input": True,
+                    "supports_system_messages": True,
+                    "supports_function_calling": True,
+                    "supports_tool_choice": True,
+                    "supports_response_schema": True,
+                    "source": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#foundation_models",
+                }
+            }
+        )
+
     @property
     def instance_cost_limit(self) -> float:
         """Cost limit for the model. Returns 0 if there is no limit."""
