@@ -46,8 +46,9 @@ fi
 clear
 
 if [ "$MODEL" == "sonnet" ]; then
-    # MODEL_NAME="claude-3-7-sonnet-20250219"
-    MODEL_NAME="claude-3-5-sonnet-20241022"
+    MODEL_NAME="anthropic/claude-3-7-sonnet-20250219"
+    MAX_INPUT_TOKENS=200000
+    # MODEL_NAME="claude-3-5-sonnet-20241022"
 elif [ "$MODEL" == "haiku" ]; then
     MODEL_NAME="claude-3-5-haiku-20241022"
 elif [ "$MODEL" == "4o" ]; then
@@ -57,9 +58,11 @@ elif [ "$MODEL" == "o1" ]; then
 elif [ "$MODEL" == "o3" ]; then
     MODEL_NAME="o3-mini"
 elif [ "$MODEL" == "gemini-pro" ]; then
-    MODEL_NAME="gemini-1.5-pro"
-elif [ "$MODEL" == "gemini-flash" ]; then
-    MODEL_NAME="gemini-2.0-flash-exp"
+    MODEL_NAME="openai/gemini-1.5-pro"
+    MAX_INPUT_TOKENS=2097152
+elif [ "$MODEL" == "flash" ]; then
+    MODEL_NAME="openai/gemini-2.0-flash-exp"
+    MAX_INPUT_TOKENS=1048576
 elif [ "$MODEL" == "human" ]; then
     MODEL_NAME="human"
 else
@@ -86,8 +89,16 @@ CMD="sweagent run-batch \
 
 # Add API base URL if provided
 if [ -n "$API_BASE" ]; then
+    echo -e "\033[1;32mAdding API base URL: \033[1;33m$API_BASE\033[0m"
     CMD="$CMD \
     --agent.model.api_base $API_BASE"
+fi
+
+# Add max input tokens if provided
+if [ -n "$MAX_INPUT_TOKENS" ]; then
+    echo -e "\033[1;32mAdding max input tokens: \033[1;33m$MAX_INPUT_TOKENS\033[0m"
+    CMD="$CMD \
+    --agent.model.max_input_tokens $MAX_INPUT_TOKENS"
 fi
 
 # Execute the command
