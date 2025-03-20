@@ -13,7 +13,8 @@ from sweagent.utils.log import get_logger
 
 logger = get_logger("secb-eval", emoji="📊")
 
-TAG = "v0.2"
+SECB_IMAGE_PREFIX = "hwiwonlee/secb.x86_64"
+SECB_IMAGE_TAG = "v0.3"
 
 
 @dataclass
@@ -34,7 +35,7 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
     """Reads the preds.json file to extract `model_patch` and `instance_id`.
 
     Creates a container using the docker image formatted as:
-      hwiwonlee/secb.x86_64.{instance_id}
+      {SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}
     Within the container, it:
       1. Applies the patch to the project
       2. Compiles the project using `secb compile`
@@ -80,7 +81,7 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
             model_patch = model_patch.replace("\r\n", "\n")
 
         # Construct the docker image name as specified.
-        docker_image = f"hwiwonlee/secb.x86_64.{instance_id}:{TAG}"
+        docker_image = f"{SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}"
         logger.info(f"Using docker image: {docker_image} for instance {instance_id}")
 
         # Create a temporary directory to hold the patch file.

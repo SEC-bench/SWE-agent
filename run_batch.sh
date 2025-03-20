@@ -26,3 +26,4 @@ elif [ "$mode" == "eval" ]; then
     python run_eval.py --input-file trajectories/${id}/secbench__o3-mini__t-0.00__p-0.95__c-1.00___secbench_test/preds.json
     python run_eval.py --input-file trajectories/${id}/secbench__anthropic/claude-3-7-sonnet-20250219__t-0.00__p-0.95__c-1.50___secbench_test/preds.json
     python run_eval.py --input-file trajectories/${id}/secbench__openai/gemini-1.5-pro__t-0.00__p-0.95__c-1.00___secbench_test/preds.json
+fi

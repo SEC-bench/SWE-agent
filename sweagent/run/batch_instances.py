@@ -27,7 +27,9 @@ from sweagent.utils.files import load_file
 from sweagent.utils.log import get_logger
 
 logger = get_logger("swea-config", emoji="🔧")
-TAG = "v0.2"
+
+SECB_IMAGE_PREFIX = "hwiwonlee/secb.x86_64"
+SECB_IMAGE_TAG = "v0.3"
 
 
 class AbstractInstanceSource(ABC):
@@ -159,9 +161,9 @@ class SimpleBatchInstance(BaseModel):
                 problem_statement=problem_statement,
             )
         deployment.image = self.image_name  # type: ignore
-        deployment.python_standalone_dir = None if self.image_name.startswith("hwiwonlee/") else "/root"  # type: ignore
+        deployment.python_standalone_dir = None if self.image_name.startswith(SECB_IMAGE_PREFIX) else "/root"  # type: ignore
         deployment.docker_args = (  # type: ignore
-            ["--security-opt", "seccomp=unconfined"] if self.image_name.startswith("hwiwonlee/") else []
+            ["--security-opt", "seccomp=unconfined"] if self.image_name.startswith(SECB_IMAGE_PREFIX) else []
         )
         return BatchInstance(
             env=EnvironmentConfig(deployment=deployment, repo=repo),
@@ -191,7 +193,7 @@ class SimpleBatchInstance(BaseModel):
         iid = instance["instance_id"]
         # Get work_dir from instance
         work_dir = _normalize_work_dir(instance["work_dir"])
-        image_name = f"hwiwonlee/secb.x86_64.{iid}:{TAG}"  # When deployment, the tag should be changed to `verified`
+        image_name = f"{SECB_IMAGE_PREFIX}.{iid}:{SECB_IMAGE_TAG}"
         bug_description = instance["bug_description"]
         problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\nYour task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
 
