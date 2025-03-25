@@ -41,7 +41,7 @@ agent:
       (Current directory: {{working_dir}})
       bash-$
   tools:
-    execution_timeout: 300
+    execution_timeout: 600
     env_variables:
       WINDOW: 100
       OVERLAP: 2

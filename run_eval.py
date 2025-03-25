@@ -14,7 +14,7 @@ from sweagent.utils.log import get_logger
 logger = get_logger("secb-eval", emoji="📊")
 
 SECB_IMAGE_PREFIX = "hwiwonlee/secb.x86_64"
-SECB_IMAGE_TAG = "v0.3"
+SECB_IMAGE_TAG = "v0.4"
 
 
 @dataclass

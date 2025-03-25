@@ -29,7 +29,7 @@ from sweagent.utils.log import get_logger
 logger = get_logger("swea-config", emoji="🔧")
 
 SECB_IMAGE_PREFIX = "hwiwonlee/secb.x86_64"
-SECB_IMAGE_TAG = "v0.3"
+SECB_IMAGE_TAG = "v0.4"
 
 
 class AbstractInstanceSource(ABC):
@@ -195,7 +195,7 @@ class SimpleBatchInstance(BaseModel):
         work_dir = _normalize_work_dir(instance["work_dir"])
         image_name = f"{SECB_IMAGE_PREFIX}.{iid}:{SECB_IMAGE_TAG}"
         bug_description = instance["bug_description"]
-        problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\nYour task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
+        problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\n<uploaded_files>\n{work_dir}\n</uploaded_files>\n\nI've uploaded a code repository in the directory `{work_dir}`. Your task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
 
         return cls(
             image_name=image_name,
