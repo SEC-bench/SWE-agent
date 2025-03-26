@@ -41,6 +41,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Self
 
+import docker
 import yaml
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
@@ -349,6 +350,19 @@ class RunBatch:
         )
         try:
             env.start()
+
+            # Extract the original environment variables from the built Docker image and set them in the active env.
+            try:
+                client = docker.from_env()
+                image = client.images.get(instance.env.deployment.image)  # type: ignore
+                env_attrs = image.attrs.get("Config", {}).get("Env", [])
+                # Convert list of "VAR=value" strings to a dictionary
+                original_env = dict(item.split("=", 1) for item in env_attrs if "=" in item)
+                env.set_env_variables(original_env)
+            except Exception as e:
+                self.logger.error(f"Failed to extract original environment variables from docker image: {e}")
+                # Continue execution even if this fails
+
             self._chooks.on_instance_start(index=0, env=env, problem_statement=instance.problem_statement)
             result = agent.run(
                 problem_statement=instance.problem_statement,
