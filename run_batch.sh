@@ -16,14 +16,14 @@ fi
 
 if [ "$mode" == "infer" ]; then
     ./run_infer.sh -m 4o -c 1.0 -t 0.0 -s eval -l :30 -n 50 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
-    ./run_infer.sh -m o3 -c 1.0 -t 0.0 -s eval -l :30 -n 50 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
+    # ./run_infer.sh -m o3 -c 1.0 -t 0.0 -s eval -l :30 -n 50 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
     ./run_infer.sh -m sonnet -c 1.5 -t 0.0 -s eval -l :30 -n 50 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
     ./run_infer.sh -m gemini-pro -c 1.0 -t 0.0 -s eval -l :30 -n 50 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
 elif [ "$mode" == "eval" ]; then
     # Get the user ID
     id=$(whoami)
     python run_eval.py --input-file trajectories/${id}/secbench__gpt-4o__t-0.00__p-0.95__c-1.00___secbench_eval/preds.json
-    python run_eval.py --input-file trajectories/${id}/secbench__o3-mini__t-0.00__p-0.95__c-1.00___secbench_eval/preds.json
+    # python run_eval.py --input-file trajectories/${id}/secbench__o3-mini__t-0.00__p-0.95__c-1.00___secbench_eval/preds.json
     python run_eval.py --input-file trajectories/${id}/secbench__anthropic/claude-3-7-sonnet-20250219__t-0.00__p-0.95__c-1.50___secbench_eval/preds.json
     python run_eval.py --input-file trajectories/${id}/secbench__openai/gemini-1.5-pro__t-0.00__p-0.95__c-1.00___secbench_eval/preds.json
 fi
