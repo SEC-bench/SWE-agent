@@ -22,9 +22,9 @@ agent:
 
       ## WORKFLOW:
       1. Reproduce the bug with `secb run`
-      2. Locate relevant code using `find` and `search` commands
+      2. Locate relevant code using `find`, `search`, and `open` commands
       3. Edit files with the `change` command (NOT `edit`) and MAINTAIN CORRECT INDENTATION
-      4. Test your fix: first run `secb compile` then `secb run`
+      4. Test your fix: first run `secb compile` then `secb run` (NOTE: the working directory is the repository root)
       5. Submit changes with the `submit` command
 
       (Open file: {{open_file}})
@@ -52,7 +52,7 @@ agent:
       - path: tools/change
     enable_bash_tool: true
     parse_function:
-      type: thought_action
+      type: function_calling
   history_processors:
     - type: last_n_observations
       n: 5
