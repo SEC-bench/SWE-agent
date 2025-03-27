@@ -239,8 +239,10 @@ fi
             logger.debug(f"Docker container logs: {decoded_logs}")
 
             sanitizer_report = extract_sanitizer_report(decoded_logs)
+            success = False
 
             if exit_result["StatusCode"] == 0 or ("Step 3: Run PoC" in decoded_logs and not sanitizer_report):
+                success = True
                 step_reason = "Patch applied, compiled, and run successfully."
                 logger.info(step_reason)
             else:
@@ -255,7 +257,7 @@ fi
             results.append(
                 PatchResult(
                     instance_id=instance_id,
-                    success=exit_result["StatusCode"] == 0,
+                    success=success,
                     reason=step_reason,
                     git_patch=model_patch,
                     exit_code=exit_result["StatusCode"],
