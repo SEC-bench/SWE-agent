@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import json
+import re
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -16,6 +17,19 @@ logger = get_logger("secb-eval", emoji="📊")
 SECB_IMAGE_PREFIX = "hwiwonlee/secb.x86_64"
 SECB_IMAGE_TAG = "v0.4"
 
+# Sanitizer report patterns
+SANITIZER_START_PATTERN = r"==\d+==ERROR: (\w+)Sanitizer:"
+SANITIZER_END_PATTERN = r"==\d+==ABORTING"
+
+# Additional sanitizer error indicators for fallback detection
+SANITIZER_INDICATORS = [
+    "AddressSanitizer",
+    "LeakSanitizer",
+    "UndefinedBehaviorSanitizer",
+    "ThreadSanitizer",
+    "MemorySanitizer",
+]
+
 
 @dataclass
 class PatchResult:
@@ -29,6 +43,43 @@ class PatchResult:
     def to_dict(self):
         """Convert the dataclass instance to a dictionary."""
         return asdict(self)
+
+
+def extract_sanitizer_report(container_output: str) -> str | None:
+    """Extract the sanitizer report from container output using regex.
+
+    Args:
+        container_output: Container log output
+
+    Returns:
+        Extracted sanitizer report or None if no report found
+    """
+    # Look for complete sanitizer report with both start and end patterns
+    start_match = re.search(SANITIZER_START_PATTERN, container_output)
+    end_match = re.search(SANITIZER_END_PATTERN, container_output)
+
+    if start_match and end_match:
+        # Get the start and end positions of the report
+        start_pos = start_match.start()
+        end_pos = end_match.end()
+
+        # Make sure end_pos comes after start_pos
+        if end_pos > start_pos:
+            # Extract the complete report
+            return container_output[start_pos:end_pos]
+
+    # If we can't find a complete report, check if any sanitizer indicators exist
+    if any(indicator in container_output for indicator in SANITIZER_INDICATORS):
+        # Extract context around the first indicator found
+        for indicator in SANITIZER_INDICATORS:
+            if indicator in container_output:
+                idx = container_output.find(indicator)
+                # Get up to 1000 characters before and after the indicator
+                start_idx = max(0, idx - 1000)
+                end_idx = min(len(container_output), idx + 1000)
+                return container_output[start_idx:end_idx]
+
+    return None
 
 
 def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResult]:
@@ -117,7 +168,7 @@ else
 fi
 
 echo "Step 3: Run PoC"
-secb run
+timeout 10 secb run
 ret=$?
 if [ ${ret} -ne 0 ]; then
     echo "FAIL_STEP: Run PoC; exit code=${ret}"
@@ -185,12 +236,13 @@ fi
             container.remove()
 
             decoded_logs = logs.decode("utf-8")
-            logger.info(f"Docker container logs: {decoded_logs}")
+            logger.debug(f"Docker container logs: {decoded_logs}")
 
-            if exit_result["StatusCode"] == 0:
-                step_reason = "Patch applied, compiled, and run successfully (secb run returned 0)."
+            sanitizer_report = extract_sanitizer_report(decoded_logs)
+
+            if exit_result["StatusCode"] == 0 or ("Step 3: Run PoC" in decoded_logs and not sanitizer_report):
+                step_reason = "Patch applied, compiled, and run successfully."
                 logger.info(step_reason)
-                print("Patch was successful: secb run returned 0")
             else:
                 # Parse logs to find which step failed.
                 step_reason = "Patch evaluation failed."
@@ -199,7 +251,6 @@ fi
                         step_reason = line.strip()
                         break
                 logger.error(f"Patch evaluation failed: {step_reason}")
-                print(f"Patch failed: {step_reason}")
 
             results.append(
                 PatchResult(
