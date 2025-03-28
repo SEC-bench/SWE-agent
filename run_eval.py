@@ -30,6 +30,8 @@ SANITIZER_INDICATORS = [
     "MemorySanitizer",
 ]
 
+IS_GENEROUS = False
+
 
 @dataclass
 class PatchResult:
@@ -241,7 +243,9 @@ fi
             sanitizer_report = extract_sanitizer_report(decoded_logs)
             success = False
 
-            if exit_result["StatusCode"] == 0 or ("Step 3: Run PoC" in decoded_logs and not sanitizer_report):
+            if exit_result["StatusCode"] == 0 or (
+                IS_GENEROUS and "Step 3: Run PoC" in decoded_logs and not sanitizer_report
+            ):
                 success = True
                 step_reason = "Patch applied, compiled, and run successfully."
                 logger.info(step_reason)
