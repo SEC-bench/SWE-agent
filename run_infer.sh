@@ -58,8 +58,10 @@ elif [ "$MODEL" == "o1" ]; then
 elif [ "$MODEL" == "o3" ]; then
     MODEL_NAME="o3-mini"
 elif [ "$MODEL" == "gemini-pro" ]; then
-    MODEL_NAME="openai/gemini-1.5-pro"
-    MAX_INPUT_TOKENS=2097152
+    MODEL_NAME="openai/gemini-2.5-pro-preview-03-25"
+    MAX_INPUT_TOKENS=1048576
+    # MODEL_NAME="openai/gemini-1.5-pro"
+    # MAX_INPUT_TOKENS=2097152
 elif [ "$MODEL" == "flash" ]; then
     MODEL_NAME="openai/gemini-2.0-flash-exp"
     MAX_INPUT_TOKENS=1048576
