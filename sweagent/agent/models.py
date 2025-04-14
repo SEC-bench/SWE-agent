@@ -552,8 +552,19 @@ class LiteLLMModel(AbstractModel):
         self.config: GenericAPIModelConfig = args.model_copy(deep=True)
         self.stats = InstanceStats()
         self.tools = tools
+
+        # NOTE: Replace openai/gemini-1.5-pro with gemini/gemini-1.5-pro
+        if self.config.name == "openai/gemini-1.5-pro":
+            model_name = "gemini/gemini-1.5-pro"
+        elif self.config.name == "openai/gemini-2.5-pro-preview-03-25":
+            model_name = "gemini/gemini-2.5-pro-preview-03-25"
+        elif self.config.name == "openai/gemini-2.0-flash-exp":
+            model_name = "gemini/gemini-2.0-flash-exp"
+        else:
+            model_name = self.config.name
+
         if tools.use_function_calling:
-            if not litellm.utils.supports_function_calling(model=self.config.name):
+            if not litellm.utils.supports_function_calling(model=model_name):
                 msg = (
                     f"Model {self.config.name} does not support function calling. If your model"
                     " does not support function calling, you can use `parse_function='thought_action'` instead. "
@@ -564,15 +575,15 @@ class LiteLLMModel(AbstractModel):
         if self.config.max_input_tokens is not None:
             self.model_max_input_tokens = self.config.max_input_tokens
         else:
-            self.model_max_input_tokens = litellm.model_cost.get(self.config.name, {}).get("max_input_tokens")
+            self.model_max_input_tokens = litellm.model_cost.get(model_name, {}).get("max_input_tokens")
 
-        self.model_max_output_tokens = litellm.model_cost.get(self.config.name, {}).get("max_output_tokens")
-        self.lm_provider = litellm.model_cost.get(self.config.name, {}).get("litellm_provider")
+        self.model_max_output_tokens = litellm.model_cost.get(model_name, {}).get("max_output_tokens")
+        self.lm_provider = litellm.model_cost.get(model_name, {}).get("litellm_provider")
         self.logger = get_logger("swea-lm", emoji="🤖")
 
         litellm.register_model(
             {
-                "gemini-2.0-flash-exp": {
+                "openai/gemini-2.0-flash-exp": {
                     "max_tokens": 8192,
                     "max_input_tokens": 1048576,
                     "max_output_tokens": 8192,
@@ -611,7 +622,7 @@ class LiteLLMModel(AbstractModel):
 
         litellm.register_model(
             {
-                "gemini-1.5-pro": {
+                "openai/gemini-1.5-pro": {
                     "max_tokens": 8192,
                     "max_input_tokens": 2097152,
                     "max_output_tokens": 8192,
@@ -638,6 +649,40 @@ class LiteLLMModel(AbstractModel):
                     "supports_tool_choice": True,
                     "supports_response_schema": True,
                     "source": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#foundation_models",
+                }
+            }
+        )
+
+        litellm.register_model(
+            {
+                "openai/gemini-2.5-pro-preview-03-25": {
+                    "max_tokens": 65536,
+                    "max_input_tokens": 1048576,
+                    "max_output_tokens": 65536,
+                    "max_images_per_prompt": 3000,
+                    "max_videos_per_prompt": 10,
+                    "max_video_length": 1,
+                    "max_audio_length_hours": 8.4,
+                    "max_audio_per_prompt": 1,
+                    "max_pdf_size_mb": 30,
+                    "input_cost_per_token": 0.00000125,
+                    "input_cost_per_token_above_200k_tokens": 0.0000025,
+                    "output_cost_per_token": 0.00001,
+                    "output_cost_per_token_above_200k_tokens": 0.000015,
+                    "litellm_provider": "openai",
+                    "mode": "chat",
+                    "supports_system_messages": True,
+                    "supports_function_calling": True,
+                    "supports_vision": True,
+                    "supports_audio_input": True,
+                    "supports_video_input": True,
+                    "supports_pdf_input": True,
+                    "supports_response_schema": True,
+                    "supports_tool_choice": True,
+                    "supported_endpoints": ["/v1/chat/completions", "/v1/completions"],
+                    "supported_modalities": ["text", "image", "audio", "video"],
+                    "supported_output_modalities": ["text"],
+                    "source": "https://cloud.google.com/vertex-ai/generative-ai/pricing",
                 }
             }
         )
