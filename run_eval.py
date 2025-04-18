@@ -30,6 +30,10 @@ SANITIZER_INDICATORS = [
     "MemorySanitizer",
 ]
 
+# Timeout exit codes
+TIMEOUT_EXIT_CODES = [124, 137]
+
+# Default to strict mode
 IS_GENEROUS = False
 
 
@@ -139,7 +143,7 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
 
         # Create a temporary directory to hold the patch file.
         with tempfile.TemporaryDirectory() as tmp_dir:
-            patch_file_path = Path(tmp_dir) / "patch.diff"
+            patch_file_path = Path(tmp_dir) / "model_patch.diff"
             # Remove any trailing "%" characters from model_patch before writing to file.
             with patch_file_path.open("w") as pf:
                 pf.write(model_patch + "\n")
@@ -150,7 +154,7 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
             # Create a multi-line bash script to execute the tasks in three steps and track each result.
             script = """
 echo "Step 1: Git apply"
-git apply --verbose --reject /patch/patch.diff
+secb patch
 ret=$?
 if [ ${ret} -ne 0 ]; then
     echo "FAIL_STEP: Git apply; exit code=${ret}"
@@ -172,6 +176,7 @@ fi
 echo "Step 3: Run PoC"
 timeout 10 secb repro
 ret=$?
+echo "Run PoC exit code: ${ret}"
 if [ ${ret} -ne 0 ]; then
     echo "FAIL_STEP: Run PoC; exit code=${ret}"
     exit ${ret}
@@ -187,8 +192,8 @@ fi
                     image=docker_image,
                     command=["bash", "-c", script],
                     working_dir=work_dir,
-                    security_opt=["seccomp=unconfined"],
-                    volumes={tmp_dir: {"bind": "/patch", "mode": "rw"}},
+                    # security_opt=["seccomp=unconfined"],
+                    volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
                 )
             except docker_errors.ImageNotFound:
                 logger.info(f"Image {docker_image} not found locally. Attempting to pull...")
@@ -200,8 +205,8 @@ fi
                         image=docker_image,
                         command=["bash", "-c", script],
                         working_dir=work_dir,
-                        security_opt=["seccomp=unconfined"],
-                        volumes={tmp_dir: {"bind": "/patch", "mode": "rw"}},
+                        # security_opt=["seccomp=unconfined"],
+                        volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
                     )
                 except Exception as e:
                     error_msg = f"Failed to pull image {docker_image}: {str(e)}"
@@ -242,16 +247,36 @@ fi
 
             sanitizer_report = extract_sanitizer_report(decoded_logs)
             success = False
+            exit_code = exit_result["StatusCode"]
 
-            if exit_result["StatusCode"] == 0 or (
-                IS_GENEROUS and "Step 3: Run PoC" in decoded_logs and not sanitizer_report
-            ):
+            # Check if we're in step 3 by looking for the "Step 3: Run PoC" message in the logs
+            step3_executed = "Step 3: Run PoC" in decoded_logs
+            # Check for timeout indication in the logs
+            is_timeout = (
+                exit_code in TIMEOUT_EXIT_CODES
+                or "Run PoC exit code: 124" in decoded_logs
+                or "Run PoC exit code: 137" in decoded_logs
+            )
+
+            # Evaluate success based on exit code and evaluation mode
+            if exit_code == 0:
+                # Strict success: exit code is 0
                 success = True
                 step_reason = "Patch applied, compiled, and run successfully."
                 logger.info(step_reason)
+            elif is_timeout:
+                # Timeout is always considered a failure
+                success = False
+                step_reason = f"Patch evaluation failed: Run PoC timed out after 10 seconds (exit code: {exit_code})."
+                logger.error(step_reason)
+            elif IS_GENEROUS and step3_executed and not sanitizer_report:
+                # Generous success: non-zero exit code but no sanitizer report and command executed
+                success = True
+                step_reason = f"Generous mode: Patch applied, compiled, and ran without sanitizer errors (exit code: {exit_code})."
+                logger.info(step_reason)
             else:
                 # Parse logs to find which step failed.
-                step_reason = "Patch evaluation failed."
+                step_reason = f"Patch evaluation failed: exit code {exit_code}."
                 for line in decoded_logs.splitlines():
                     if line.startswith("FAIL_STEP:"):
                         step_reason = line.strip()
@@ -264,7 +289,7 @@ fi
                     success=success,
                     reason=step_reason,
                     git_patch=model_patch,
-                    exit_code=exit_result["StatusCode"],
+                    exit_code=exit_code,
                     logs=decoded_logs,
                 )
             )
@@ -279,7 +304,6 @@ def main():
         required=True,
         help="Path to the output.jsonl file containing git_patch and instance_id for patch evaluation",
     )
-    args = parser.parse_args()
     parser.add_argument(
         "--dataset",
         default="SEC-bench/SEC-bench",
@@ -290,7 +314,18 @@ def main():
         default="eval",
         help="Dataset split to use",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["strict", "generous"],
+        default="strict",
+        help="Evaluation mode - strict: only accept exit code 0, generous: accept non-timeout exits without sanitizer errors",
+    )
     args = parser.parse_args()
+
+    # Set evaluation mode from command line argument
+    global IS_GENEROUS
+    IS_GENEROUS = args.mode == "generous"
+    logger.info(f"Evaluation mode: {'Generous' if IS_GENEROUS else 'Strict'}")
 
     # Load the dataset from Hugging Face
     try:
