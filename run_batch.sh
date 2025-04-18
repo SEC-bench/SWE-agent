@@ -17,10 +17,10 @@ if [ "$mode" != "infer" ] && [ "$mode" != "eval" ] && [ "$mode" != "view" ]; the
 fi
 
 if [ "$mode" == "infer" ]; then
-    ./run_infer.sh -m 4o -c 1.0 -t 0.0 -s eval -l :80 -n 75 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
-    ./run_infer.sh -m o3 -c 1.0 -t 0.0 -s eval -l :80 -n 75 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
-    ./run_infer.sh -m gemini-pro -c 1.5 -t 0.0 -s eval -l :80 -n 75 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
-    ./run_infer.sh -m sonnet -c 1.5 -t 0.0 -s eval -l :80 -n 75 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
+    ./run_infer.sh -m 4o -c 1.0 -t 0.0 -s eval -l :80 -n 75 -w 2 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
+    ./run_infer.sh -m o3 -c 1.0 -t 0.0 -s eval -l :80 -n 75 -w 2 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
+    ./run_infer.sh -m gemini-pro -c 1.5 -t 0.0 -s eval -l :80 -n 75 -w 2 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
+    ./run_infer.sh -m sonnet -c 1.5 -t 0.0 -s eval -l :80 -n 75 -w 2 -b "https://litellm-proxy-153298433405.us-east1.run.app/"
 elif [ "$mode" == "eval" ]; then
     # Get the user ID
     id=$(whoami)
