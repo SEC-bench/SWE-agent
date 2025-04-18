@@ -21,10 +21,10 @@ agent:
       5. When changing code, explain the problem in the code, your fix, and how it preserves functionality
 
       ## WORKFLOW:
-      1. Reproduce the bug with `secb run`
+      1. Reproduce the bug with `secb repro`
       2. Locate relevant code using `find`, `search`, and `open` commands
       3. Edit files with the `change` command (NOT `edit`) and MAINTAIN CORRECT INDENTATION
-      4. Test your fix: first run `secb compile` then `secb run` (NOTE: the working directory is the repository root)
+      4. Test your fix: first run `secb build` then `secb repro` (NOTE: the working directory is the repository root)
       5. Submit changes with the `submit` command
 
       (Open file: {{open_file}})

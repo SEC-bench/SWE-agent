@@ -84,7 +84,7 @@ CMD="sweagent run-batch \
     --agent.model.per_instance_cost_limit $COST_LIMIT \
     --agent.model.delay 1.0 \
     --instances.type secbench \
-    --instances.dataset_name \"hwiwonl/SEC-bench\" \
+    --instances.dataset_name \"SEC-bench/SEC-bench\" \
     --instances.split $SPLIT \
     --instances.slice $SLICE \
     --instances.shuffle=False"

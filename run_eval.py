@@ -14,8 +14,8 @@ from sweagent.utils.log import get_logger
 
 logger = get_logger("secb-eval", emoji="📊")
 
-SECB_IMAGE_PREFIX = "hwiwonlee/secb.x86_64"
-SECB_IMAGE_TAG = "v0.4"
+SECB_IMAGE_PREFIX = "hwiwonlee/secb.eval.x86_64"
+SECB_IMAGE_TAG = "latest"
 
 # Sanitizer report patterns
 SANITIZER_START_PATTERN = r"==\d+==ERROR: (\w+)Sanitizer:"
@@ -91,9 +91,9 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
       {SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}
     Within the container, it:
       1. Applies the patch to the project
-      2. Compiles the project using `secb compile`
-      3. Runs the PoC trigger command `secb run`
-    If the `secb run` command returns a 0 exit code, the patch is deemed successful.
+      2. Compiles the project using `secb build`
+      3. Runs the PoC trigger command `secb repro`
+    If the `secb repro` command returns a 0 exit code, the patch is deemed successful.
     """
     # Parse the JSON file (not JSONL)
     with open(patch_input) as f:
@@ -160,7 +160,7 @@ else
 fi
 
 echo "Step 2: Compile"
-secb compile
+secb build
 ret=$?
 if [ ${ret} -ne 0 ]; then
     echo "FAIL_STEP: Compile; exit code=${ret}"
@@ -170,7 +170,7 @@ else
 fi
 
 echo "Step 3: Run PoC"
-timeout 10 secb run
+timeout 10 secb repro
 ret=$?
 if [ ${ret} -ne 0 ]; then
     echo "FAIL_STEP: Run PoC; exit code=${ret}"
@@ -282,7 +282,7 @@ def main():
     args = parser.parse_args()
     parser.add_argument(
         "--dataset",
-        default="hwiwonl/SEC-bench",
+        default="SEC-bench/SEC-bench",
         help="Hugging Face dataset name to load",
     )
     parser.add_argument(
