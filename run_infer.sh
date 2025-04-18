@@ -7,10 +7,11 @@ SPLIT="test"
 SLICE=":1"
 API_BASE=""
 CALL_LIMIT=30
+NUM_WORKERS=1
 
 # Help function
 show_help() {
-    echo "Usage: $0 -m <model> [-c <cost_limit>] [-t <temperature>] [-s <split>] [-l <slice>] [-b <api_base_url>] [-n <call_limit>]"
+    echo "Usage: $0 -m <model> [-c <cost_limit>] [-t <temperature>] [-s <split>] [-l <slice>] [-b <api_base_url>] [-n <call_limit>] [-w <num_workers>]"
     echo "  -m: Model name (sonnet, haiku, 4o, o1, human)"
     echo "  -c: Cost limit (default: 0.2)"
     echo "  -t: Temperature (default: 0.2)"
@@ -18,12 +19,13 @@ show_help() {
     echo "  -l: Slice (default: 1:2)"
     echo "  -b: API Base URL (optional)"
     echo "  -n: Per instance call limit (default: 30)"
+    echo "  -w: Number of workers (default: 1)"
     echo "  -h: Show this help message"
     exit 1
 }
 
 # Parse command line arguments
-while getopts "m:c:t:s:l:b:n:h" opt; do
+while getopts "m:c:t:s:l:b:n:w:h" opt; do
     case $opt in
         m) MODEL="$OPTARG";;
         c) COST_LIMIT="$OPTARG";;
@@ -32,6 +34,7 @@ while getopts "m:c:t:s:l:b:n:h" opt; do
         l) SLICE="$OPTARG";;
         b) API_BASE="$OPTARG";;
         n) CALL_LIMIT="$OPTARG";;
+        w) NUM_WORKERS="$OPTARG";;
         h) show_help;;
         \?) show_help;;
     esac
@@ -76,6 +79,7 @@ fi
 
 # Start building the command
 CMD="sweagent run-batch \
+    --num_workers $NUM_WORKERS \
     --config ./config/secbench.yaml \
     --agent.model.name $MODEL_NAME \
     --agent.model.temperature $TEMPERATURE \
