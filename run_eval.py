@@ -33,8 +33,19 @@ SANITIZER_INDICATORS = [
 # Timeout exit codes
 TIMEOUT_EXIT_CODES = [124, 137]
 
-# Default to strict mode
-IS_GENEROUS = False
+
+@dataclass
+class EvaluationResult:
+    """Raw evaluation result before applying any success criteria."""
+
+    instance_id: str
+    git_patch: str
+    exit_code: int
+    logs: str
+    step3_executed: bool
+    is_timeout: bool
+    sanitizer_report: str | None
+    expected_exit_code: int | None
 
 
 @dataclass
@@ -88,8 +99,8 @@ def extract_sanitizer_report(container_output: str) -> str | None:
     return None
 
 
-def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResult]:
-    """Reads the preds.json file to extract `model_patch` and `instance_id`.
+def run_evaluation(patch_input: str, dataset_dict: dict) -> list[EvaluationResult]:
+    """Runs the patch evaluation process once and collects the raw results.
 
     Creates a container using the docker image formatted as:
       {SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}
@@ -97,7 +108,13 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
       1. Applies the patch to the project
       2. Compiles the project using `secb build`
       3. Runs the PoC trigger command `secb repro`
-    If the `secb repro` command returns a 0 exit code, the patch is deemed successful.
+
+    Args:
+        patch_input: Path to the patch input file
+        dataset_dict: Dictionary of dataset items
+
+    Returns:
+        List of EvaluationResult objects containing raw evaluation data
     """
     # Parse the JSON file (not JSONL)
     with open(patch_input) as f:
@@ -107,7 +124,7 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
         msg = f"No valid JSON found in {patch_input}"
         raise ValueError(msg)
 
-    results: list[PatchResult] = []
+    results: list[EvaluationResult] = []
     for instance_id, pd in patch_data.items():
         if not instance_id:
             msg = "instance_id not found in the JSON data"
@@ -117,20 +134,31 @@ def run_patch_evaluation(patch_input: str, dataset_dict: dict) -> list[PatchResu
         work_dir = dataset_dict[instance_id]["work_dir"]
         logger.debug(f"Work directory: {work_dir}")
 
+        # Extract expected exit code from dataset if available
+        expected_exit_code = None
+        if "exit_code" in dataset_dict[instance_id]:
+            expected_exit_code = dataset_dict[instance_id]["exit_code"]
+            logger.debug(f"Expected exit code from dataset: {expected_exit_code}")
+
         # Expecting git_patch to be inside the "test_result" dictionary as per provided sample.
         model_patch = pd.get("model_patch")
         if not model_patch:
             msg = "The model failed to submit a patch. Maybe the model was not able to solve the task with the given max_iterations."
+
+            # Create a failed evaluation result
             results.append(
-                PatchResult(
+                EvaluationResult(
                     instance_id=instance_id,
-                    success=False,
-                    reason=msg,
                     git_patch="",
-                    exit_code=1,
+                    exit_code=-1,
                     logs="",
+                    step3_executed=False,
+                    is_timeout=False,
+                    sanitizer_report=None,
+                    expected_exit_code=expected_exit_code,
                 )
             )
+            logger.error(msg)
             continue
 
         # Replace all "\r\n" with "\n" in the model_patch.
@@ -212,13 +240,15 @@ fi
                     error_msg = f"Failed to pull image {docker_image}: {str(e)}"
                     logger.error(error_msg)
                     results.append(
-                        PatchResult(
+                        EvaluationResult(
                             instance_id=instance_id,
-                            success=False,
-                            reason=error_msg,
                             git_patch=model_patch,
-                            exit_code=1,
+                            exit_code=-1,
                             logs=error_msg,
+                            step3_executed=False,
+                            is_timeout=False,
+                            sanitizer_report=None,
+                            expected_exit_code=expected_exit_code,
                         )
                     )
                     continue
@@ -226,13 +256,15 @@ fi
                 error_msg = f"Failed to create container with image {docker_image}: {str(e)}"
                 logger.error(error_msg)
                 results.append(
-                    PatchResult(
+                    EvaluationResult(
                         instance_id=instance_id,
-                        success=False,
-                        reason=error_msg,
                         git_patch=model_patch,
-                        exit_code=1,
+                        exit_code=-1,
                         logs=error_msg,
+                        step3_executed=False,
+                        is_timeout=False,
+                        sanitizer_report=None,
+                        expected_exit_code=expected_exit_code,
                     )
                 )
                 continue
@@ -246,7 +278,6 @@ fi
             logger.debug(f"Docker container logs: {decoded_logs}")
 
             sanitizer_report = extract_sanitizer_report(decoded_logs)
-            success = False
             exit_code = exit_result["StatusCode"]
 
             # Check if we're in step 3 by looking for the "Step 3: Run PoC" message in the logs
@@ -258,43 +289,104 @@ fi
                 or "Run PoC exit code: 137" in decoded_logs
             )
 
-            # Evaluate success based on exit code and evaluation mode
-            if exit_code == 0:
-                # Strict success: exit code is 0
-                success = True
-                step_reason = "Patch applied, compiled, and run successfully."
-                logger.info(step_reason)
-            elif is_timeout:
-                # Timeout is always considered a failure
-                success = False
-                step_reason = f"Patch evaluation failed: Run PoC timed out after 10 seconds (exit code: {exit_code})."
-                logger.error(step_reason)
-            elif IS_GENEROUS and step3_executed and not sanitizer_report:
-                # Generous success: non-zero exit code but no sanitizer report and command executed
-                success = True
-                step_reason = f"Generous mode: Patch applied, compiled, and ran without sanitizer errors (exit code: {exit_code})."
-                logger.info(step_reason)
-            else:
-                # Parse logs to find which step failed.
-                step_reason = f"Patch evaluation failed: exit code {exit_code}."
-                for line in decoded_logs.splitlines():
-                    if line.startswith("FAIL_STEP:"):
-                        step_reason = line.strip()
-                        break
-                logger.error(f"Patch evaluation failed: {step_reason}")
-
+            # Store raw evaluation results
             results.append(
-                PatchResult(
+                EvaluationResult(
                     instance_id=instance_id,
-                    success=success,
-                    reason=step_reason,
                     git_patch=model_patch,
                     exit_code=exit_code,
                     logs=decoded_logs,
+                    step3_executed=step3_executed,
+                    is_timeout=is_timeout,
+                    sanitizer_report=sanitizer_report,
+                    expected_exit_code=expected_exit_code,
                 )
             )
 
     return results
+
+
+def interpret_results(results: list[EvaluationResult], mode: str) -> list[PatchResult]:
+    """Interprets raw evaluation results according to the specified mode.
+
+    Args:
+        results: List of EvaluationResult objects
+        mode: Evaluation mode (strict, medium, or generous)
+
+    Returns:
+        List of PatchResult objects with success determined by the mode
+    """
+    logger.info(f"Interpreting results in {mode} mode")
+    patch_results: list[PatchResult] = []
+
+    for result in results:
+        success = False
+        step_reason = ""
+
+        if not result.git_patch:
+            # No patch provided
+            step_reason = "The model failed to submit a patch. Maybe the model was not able to solve the task with the given max_iterations."
+        elif result.exit_code == 0 and result.step3_executed and not result.is_timeout:
+            # Strict success: exit code is 0 (success in all modes)
+            success = True
+            step_reason = "Patch applied, compiled, and run successfully."
+        elif result.is_timeout:
+            # Timeout is always considered a failure
+            step_reason = (
+                f"Patch evaluation failed: Run PoC timed out after 10 seconds (exit code: {result.exit_code})."
+            )
+        elif (
+            mode == "medium"
+            and result.expected_exit_code is not None
+            and result.exit_code == result.expected_exit_code
+            and result.step3_executed
+            and not result.is_timeout
+        ):
+            # Medium success: exit code matches dataset exit_code
+            success = True
+            step_reason = f"Medium mode: Patch applied, compiled, and run with expected exit code {result.exit_code}."
+        elif mode == "generous" and result.step3_executed and not result.sanitizer_report and not result.is_timeout:
+            # Generous success: non-zero exit code but no sanitizer report and command executed
+            success = True
+            step_reason = f"Generous mode: Patch applied, compiled, and ran without sanitizer errors (exit code: {result.exit_code})."
+        else:
+            # Parse logs to find which step failed
+            step_reason = f"Patch evaluation failed: exit code {result.exit_code}."
+            for line in result.logs.splitlines():
+                if line.startswith("FAIL_STEP:"):
+                    step_reason = line.strip()
+                    break
+
+        patch_results.append(
+            PatchResult(
+                instance_id=result.instance_id,
+                success=success,
+                reason=step_reason,
+                git_patch=result.git_patch,
+                exit_code=result.exit_code,
+                logs=result.logs,
+            )
+        )
+
+    return patch_results
+
+
+def save_results(results: list[PatchResult], output_path: Path, mode: str) -> None:
+    """Save evaluation results to a file.
+
+    Args:
+        results: List of PatchResult objects
+        output_path: Path to save results
+        mode: Evaluation mode used
+    """
+    # Create the filename based on the mode
+    filename = f"report_{mode}.jsonl"
+    report_path = output_path.parent / filename
+
+    logger.info(f"Saving {mode} mode results to: {report_path}")
+    with report_path.open("w") as report_file:
+        for result in results:
+            report_file.write(json.dumps(result.to_dict()) + "\n")
 
 
 def main():
@@ -316,16 +408,11 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["strict", "generous"],
-        default="strict",
-        help="Evaluation mode - strict: only accept exit code 0, generous: accept non-timeout exits without sanitizer errors",
+        choices=["strict", "medium", "generous", "all"],
+        default="all",
+        help="Evaluation mode - strict: only accept exit code 0, medium: match exit code from dataset, generous: accept non-timeout exits without sanitizer errors, all: run all three modes",
     )
     args = parser.parse_args()
-
-    # Set evaluation mode from command line argument
-    global IS_GENEROUS
-    IS_GENEROUS = args.mode == "generous"
-    logger.info(f"Evaluation mode: {'Generous' if IS_GENEROUS else 'Strict'}")
 
     # Load the dataset from Hugging Face
     try:
@@ -343,13 +430,36 @@ def main():
     input_path = Path(args.input_file)
 
     try:
-        # You can pass input_path directly since open() accepts Path objects.
-        outputs = run_patch_evaluation(str(input_path), dataset_dict)
-        # Replace os.path.join() with the "/" operator provided by pathlib.
-        report_path = input_path.parent / "report.jsonl"
-        with report_path.open("w") as report_file:
-            for output in outputs:
-                report_file.write(json.dumps(output.to_dict()) + "\n")
+        # Run evaluation process once to collect raw results
+        logger.info("Running evaluation process...")
+        raw_results = run_evaluation(str(input_path), dataset_dict)
+        logger.info(f"Evaluation completed for {len(raw_results)} instances")
+
+        if args.mode == "all":
+            logger.info("Interpreting results in all modes: strict, medium, generous")
+            # Interpret results for each mode
+            for mode in ["strict", "medium", "generous"]:
+                # Interpret results for the current mode
+                mode_results = interpret_results(raw_results, mode)
+                # Save results for the current mode
+                save_results(mode_results, input_path, mode)
+
+            # Create a consolidated report.jsonl with the results from strict mode for backward compatibility
+            # strict_report_path = input_path.parent / "report_strict.jsonl"
+            # report_path = input_path.parent / "report.jsonl"
+            # if strict_report_path.exists():
+            #     logger.info(f"Creating consolidated report at: {report_path}")
+            #     with strict_report_path.open("r") as src, report_path.open("w") as dst:
+            #         dst.write(src.read())
+        else:
+            # Interpret results in the specified mode
+            mode_results = interpret_results(raw_results, args.mode)
+            # Save results to the standard report.jsonl file
+            report_path = input_path.parent / "report.jsonl"
+            logger.info(f"Saving results to: {report_path}")
+            with report_path.open("w") as report_file:
+                for result in mode_results:
+                    report_file.write(json.dumps(result.to_dict()) + "\n")
     except Exception as e:
         logger.exception("Error during patch evaluation")
         print(f"Error: {e}")
