@@ -11,7 +11,7 @@ agent:
       You'll solve this issue using the terminal session that's now active in the repository's root directory.
       IMPORTANT: INCLUDE EXACTLY ONE TOOL CALL/FUNCTION CALL PER RESPONSE.
       When your changes are complete, run the `submit` command.
-      No interactive commands (python, vim, gdb, etc.) are allowed - write scripts instead.
+      No interactive commands (python, vim, gdb, git show, etc.) are allowed - write scripts instead.
 
       ## KEY TIPS:
       1. If a command fails, check if the current directory is the repository root directory
