@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import concurrent.futures
 import json
 import re
 import tempfile
@@ -99,88 +100,47 @@ def extract_sanitizer_report(container_output: str) -> str | None:
     return None
 
 
-def run_evaluation(patch_input: str, dataset_dict: dict) -> list[EvaluationResult]:
-    """Runs the patch evaluation process once and collects the raw results.
-
-    Creates a container using the docker image formatted as:
-      {SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}
-    Within the container, it:
-      1. Applies the patch to the project
-      2. Compiles the project using `secb build`
-      3. Runs the PoC trigger command `secb repro`
+def run_evaluation_single(instance_id: str, model_patch: str, dataset_dict: dict) -> EvaluationResult:
+    """Runs the patch evaluation process for a single instance.
 
     Args:
-        patch_input: Path to the patch input file
+        instance_id: The instance ID to evaluate
+        model_patch: The patch to apply
         dataset_dict: Dictionary of dataset items
 
     Returns:
-        List of EvaluationResult objects containing raw evaluation data
+        EvaluationResult object containing raw evaluation data
     """
-    # Parse the JSON file (not JSONL)
-    with open(patch_input) as f:
-        patch_data = json.load(f)
+    # Extract working directory from the instance_id
+    work_dir = dataset_dict[instance_id]["work_dir"]
+    logger.debug(f"Work directory: {work_dir}")
 
-    if not patch_data:
-        msg = f"No valid JSON found in {patch_input}"
-        raise ValueError(msg)
+    # Extract expected exit code from dataset if available
+    expected_exit_code = None
+    if "exit_code" in dataset_dict[instance_id]:
+        expected_exit_code = dataset_dict[instance_id]["exit_code"]
+        logger.debug(f"Expected exit code from dataset: {expected_exit_code}")
 
-    results: list[EvaluationResult] = []
-    for instance_id, pd in patch_data.items():
-        if not instance_id:
-            msg = "instance_id not found in the JSON data"
-            raise ValueError(msg)
+    # Replace all "\r\n" with "\n" in the model_patch.
+    if model_patch is not None:
+        model_patch = model_patch.replace("\r\n", "\n")
 
-        # Extract working directory from the instance_id
-        work_dir = dataset_dict[instance_id]["work_dir"]
-        logger.debug(f"Work directory: {work_dir}")
+    # Construct the docker image name as specified.
+    docker_image = f"{SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}"
+    logger.info(f"Using docker image: {docker_image} for instance {instance_id}")
 
-        # Extract expected exit code from dataset if available
-        expected_exit_code = None
-        if "exit_code" in dataset_dict[instance_id]:
-            expected_exit_code = dataset_dict[instance_id]["exit_code"]
-            logger.debug(f"Expected exit code from dataset: {expected_exit_code}")
+    # Create a temporary directory to hold the patch file.
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        patch_file_path = Path(tmp_dir) / "model_patch.diff"
+        # Remove any trailing "%" characters from model_patch before writing to file.
+        with patch_file_path.open("w") as pf:
+            pf.write(model_patch + "\n")
+        logger.info(f"Patch file written to: {patch_file_path}")
 
-        # Expecting git_patch to be inside the "test_result" dictionary as per provided sample.
-        model_patch = pd.get("model_patch")
-        if not model_patch:
-            msg = "The model failed to submit a patch. Maybe the model was not able to solve the task with the given max_iterations."
+        client = docker.from_env()  # type: ignore
 
-            # Create a failed evaluation result
-            results.append(
-                EvaluationResult(
-                    instance_id=instance_id,
-                    git_patch="",
-                    exit_code=-1,
-                    logs="",
-                    step3_executed=False,
-                    is_timeout=False,
-                    sanitizer_report=None,
-                    expected_exit_code=expected_exit_code,
-                )
-            )
-            logger.error(msg)
-            continue
-
-        # Replace all "\r\n" with "\n" in the model_patch.
-        if model_patch is not None:
-            model_patch = model_patch.replace("\r\n", "\n")
-
-        # Construct the docker image name as specified.
-        docker_image = f"{SECB_IMAGE_PREFIX}.{instance_id}:{SECB_IMAGE_TAG}"
-        logger.info(f"Using docker image: {docker_image} for instance {instance_id}")
-
-        # Create a temporary directory to hold the patch file.
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            patch_file_path = Path(tmp_dir) / "model_patch.diff"
-            # Remove any trailing "%" characters from model_patch before writing to file.
-            with patch_file_path.open("w") as pf:
-                pf.write(model_patch + "\n")
-            logger.info(f"Patch file written to: {patch_file_path}")
-
-            client = docker.from_env()  # type: ignore
-
-            # Create a multi-line bash script to execute the tasks in three steps and track each result.
-            script = """
+        # Create a multi-line bash script to execute the tasks in three steps and track each result.
+        script = """
 echo "Step 1: Git apply"
 secb patch
 ret=$?
@@ -212,10 +172,23 @@ else
     echo "SUCCESS: Run PoC passed; exit code=${ret}"
     exit 0
 fi
-    """
-            logger.info(f"Running docker container with image: {docker_image} using multi-step script")
+"""
+        logger.info(f"Running docker container with image: {docker_image} using multi-step script")
 
+        try:
+            container = client.containers.create(
+                image=docker_image,
+                command=["bash", "-c", script],
+                working_dir=work_dir,
+                # security_opt=["seccomp=unconfined"],
+                volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
+            )
+        except docker_errors.ImageNotFound:
+            logger.info(f"Image {docker_image} not found locally. Attempting to pull...")
             try:
+                client.images.pull(docker_image)
+                logger.info(f"Successfully pulled image: {docker_image}")
+                # Retry container creation after pulling the image
                 container = client.containers.create(
                     image=docker_image,
                     command=["bash", "-c", script],
@@ -223,85 +196,159 @@ fi
                     # security_opt=["seccomp=unconfined"],
                     volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
                 )
-            except docker_errors.ImageNotFound:
-                logger.info(f"Image {docker_image} not found locally. Attempting to pull...")
-                try:
-                    client.images.pull(docker_image)
-                    logger.info(f"Successfully pulled image: {docker_image}")
-                    # Retry container creation after pulling the image
-                    container = client.containers.create(
-                        image=docker_image,
-                        command=["bash", "-c", script],
-                        working_dir=work_dir,
-                        # security_opt=["seccomp=unconfined"],
-                        volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
-                    )
-                except Exception as e:
-                    error_msg = f"Failed to pull image {docker_image}: {str(e)}"
-                    logger.error(error_msg)
-                    results.append(
-                        EvaluationResult(
-                            instance_id=instance_id,
-                            git_patch=model_patch,
-                            exit_code=-1,
-                            logs=error_msg,
-                            step3_executed=False,
-                            is_timeout=False,
-                            sanitizer_report=None,
-                            expected_exit_code=expected_exit_code,
-                        )
-                    )
-                    continue
             except Exception as e:
-                error_msg = f"Failed to create container with image {docker_image}: {str(e)}"
+                error_msg = f"Failed to pull image {docker_image}: {str(e)}"
                 logger.error(error_msg)
-                results.append(
-                    EvaluationResult(
-                        instance_id=instance_id,
-                        git_patch=model_patch,
-                        exit_code=-1,
-                        logs=error_msg,
-                        step3_executed=False,
-                        is_timeout=False,
-                        sanitizer_report=None,
-                        expected_exit_code=expected_exit_code,
-                    )
+                return EvaluationResult(
+                    instance_id=instance_id,
+                    git_patch=model_patch,
+                    exit_code=-1,
+                    logs=error_msg,
+                    step3_executed=False,
+                    is_timeout=False,
+                    sanitizer_report=None,
+                    expected_exit_code=expected_exit_code,
                 )
-                continue
-
-            container.start()
-            exit_result = container.wait()
-            logs = container.logs()
-            container.remove()
-
-            decoded_logs = logs.decode("utf-8")
-            logger.debug(f"Docker container logs: {decoded_logs}")
-
-            sanitizer_report = extract_sanitizer_report(decoded_logs)
-            exit_code = exit_result["StatusCode"]
-
-            # Check if we're in step 3 by looking for the "Step 3: Run PoC" message in the logs
-            step3_executed = "Step 3: Run PoC" in decoded_logs
-            # Check for timeout indication in the logs
-            is_timeout = (
-                exit_code in TIMEOUT_EXIT_CODES
-                or "Run PoC exit code: 124" in decoded_logs
-                or "Run PoC exit code: 137" in decoded_logs
+        except Exception as e:
+            error_msg = f"Failed to create container with image {docker_image}: {str(e)}"
+            logger.error(error_msg)
+            return EvaluationResult(
+                instance_id=instance_id,
+                git_patch=model_patch,
+                exit_code=-1,
+                logs=error_msg,
+                step3_executed=False,
+                is_timeout=False,
+                sanitizer_report=None,
+                expected_exit_code=expected_exit_code,
             )
 
-            # Store raw evaluation results
+        container.start()
+        exit_result = container.wait()
+        logs = container.logs()
+        container.remove()
+
+        decoded_logs = logs.decode("utf-8")
+        logger.debug(f"Docker container logs: {decoded_logs}")
+
+        sanitizer_report = extract_sanitizer_report(decoded_logs)
+        exit_code = exit_result["StatusCode"]
+
+        # Check if we're in step 3 by looking for the "Step 3: Run PoC" message in the logs
+        step3_executed = "Step 3: Run PoC" in decoded_logs
+        # Check for timeout indication in the logs
+        is_timeout = (
+            exit_code in TIMEOUT_EXIT_CODES
+            or "Run PoC exit code: 124" in decoded_logs
+            or "Run PoC exit code: 137" in decoded_logs
+        )
+
+        # Return raw evaluation results
+        return EvaluationResult(
+            instance_id=instance_id,
+            git_patch=model_patch,
+            exit_code=exit_code,
+            logs=decoded_logs,
+            step3_executed=step3_executed,
+            is_timeout=is_timeout,
+            sanitizer_report=sanitizer_report,
+            expected_exit_code=expected_exit_code,
+        )
+
+
+def run_evaluation(patch_input: str, dataset_dict: dict, num_workers: int = 1) -> list[EvaluationResult]:
+    """Runs the patch evaluation process and collects the raw results.
+
+    Can run evaluations in parallel using multiple workers.
+
+    Args:
+        patch_input: Path to the patch input file
+        dataset_dict: Dictionary of dataset items
+        num_workers: Number of parallel workers to use
+
+    Returns:
+        List of EvaluationResult objects containing raw evaluation data
+    """
+    # Parse the JSON file (not JSONL)
+    with open(patch_input) as f:
+        patch_data = json.load(f)
+
+    if not patch_data:
+        msg = f"No valid JSON found in {patch_input}"
+        raise ValueError(msg)
+
+    results: list[EvaluationResult] = []
+
+    # Create evaluation tasks list
+    evaluation_tasks = []
+    for instance_id, pd in patch_data.items():
+        if not instance_id:
+            msg = "instance_id not found in the JSON data"
+            raise ValueError(msg)
+
+        # Expecting model_patch to be inside the dictionary
+        model_patch = pd.get("model_patch")
+        if not model_patch:
+            logger.error(
+                "The model failed to submit a patch. Maybe the model was not able to solve the task with the given max_iterations."
+            )
+            # Create a failed evaluation result
             results.append(
                 EvaluationResult(
                     instance_id=instance_id,
-                    git_patch=model_patch,
-                    exit_code=exit_code,
-                    logs=decoded_logs,
-                    step3_executed=step3_executed,
-                    is_timeout=is_timeout,
-                    sanitizer_report=sanitizer_report,
-                    expected_exit_code=expected_exit_code,
+                    git_patch="",
+                    exit_code=-1,
+                    logs="",
+                    step3_executed=False,
+                    is_timeout=False,
+                    sanitizer_report=None,
+                    expected_exit_code=dataset_dict[instance_id].get("exit_code")
+                    if instance_id in dataset_dict
+                    else None,
                 )
             )
+        else:
+            # Add task to the list
+            evaluation_tasks.append((instance_id, model_patch))
+
+    if num_workers <= 1 or not evaluation_tasks:
+        # Run evaluations sequentially if num_workers is 1 or no tasks
+        logger.info("Running evaluations sequentially")
+        for instance_id, model_patch in evaluation_tasks:
+            result = run_evaluation_single(instance_id, model_patch, dataset_dict)
+            results.append(result)
+    else:
+        # Run evaluations in parallel using multiple workers
+        logger.info(f"Running evaluations in parallel with {num_workers} workers")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            future_to_instance = {
+                executor.submit(run_evaluation_single, instance_id, model_patch, dataset_dict): instance_id
+                for instance_id, model_patch in evaluation_tasks
+            }
+
+            for future in concurrent.futures.as_completed(future_to_instance):
+                instance_id = future_to_instance[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    logger.info(f"Completed evaluation for instance {instance_id}")
+                except Exception as e:
+                    logger.error(f"Evaluation failed for instance {instance_id}: {str(e)}")
+                    # Add a failed result on exception
+                    results.append(
+                        EvaluationResult(
+                            instance_id=instance_id,
+                            git_patch="",
+                            exit_code=-1,
+                            logs=f"Parallel execution error: {str(e)}",
+                            step3_executed=False,
+                            is_timeout=False,
+                            sanitizer_report=None,
+                            expected_exit_code=dataset_dict[instance_id].get("exit_code")
+                            if instance_id in dataset_dict
+                            else None,
+                        )
+                    )
 
     return results
 
@@ -412,6 +459,12 @@ def main():
         default="all",
         help="Evaluation mode - strict: only accept exit code 0, medium: match exit code from dataset, generous: accept non-timeout exits without sanitizer errors, all: run all three modes",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers to use for evaluation (default: 1)",
+    )
     args = parser.parse_args()
 
     # Load the dataset from Hugging Face
@@ -430,9 +483,9 @@ def main():
     input_path = Path(args.input_file)
 
     try:
-        # Run evaluation process once to collect raw results
-        logger.info("Running evaluation process...")
-        raw_results = run_evaluation(str(input_path), dataset_dict)
+        # Run evaluation process with specified number of workers
+        logger.info(f"Running evaluation process with {args.num_workers} workers...")
+        raw_results = run_evaluation(str(input_path), dataset_dict, args.num_workers)
         logger.info(f"Evaluation completed for {len(raw_results)} instances")
 
         if args.mode == "all":
