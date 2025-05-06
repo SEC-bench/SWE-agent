@@ -28,8 +28,85 @@ from sweagent.utils.log import get_logger
 
 logger = get_logger("swea-config", emoji="🔧")
 
+####################### SEC-BENCH #######################
+
 SECB_IMAGE_PREFIX = "hwiwonlee/secb.eval.x86_64"
-SECB_IMAGE_TAG = "latest"
+# SECB_IMAGE_TAG = "latest"
+
+# Sanitizer error message patterns
+SANITIZER_ERROR_PATTERNS = [
+    "ERROR: AddressSanitizer:",
+    "ERROR: MemorySanitizer:",
+    "WARNING: MemorySanitizer:",
+    "UndefinedBehaviorSanitizer:DEADLYSIGNAL",
+    "ERROR: LeakSanitizer:",
+    "SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior",
+]
+
+# Sanitizer report patterns
+SANITIZER_START_PATTERN = r"==\d+==(?:ERROR|WARNING): (\w+)Sanitizer:"
+SANITIZER_END_PATTERN = r"==\d+==ABORTING"
+# Stack trace pattern that often appears at the end of sanitizer reports
+STACK_TRACE_END_PATTERN = r"\s+#\d+ 0x[0-9a-f]+"
+
+
+def extract_sanitizer_report(container_output: str) -> str | None:
+    """Extract the sanitizer report from container output using regex.
+
+    Args:
+        container_output: Container log output
+
+    Returns:
+        Extracted sanitizer report or None if no report found
+    """
+    # Look for complete sanitizer report with both start and end patterns
+    start_match = re.search(SANITIZER_START_PATTERN, container_output)
+    end_match = re.search(SANITIZER_END_PATTERN, container_output)
+
+    if start_match and end_match:
+        # Get the start and end positions of the report
+        start_pos = start_match.start()
+        end_pos = end_match.end()
+
+        # Make sure end_pos comes after start_pos
+        if end_pos > start_pos:
+            # Extract the complete report
+            return container_output[start_pos:end_pos]
+
+    # If we have a start match but no end match, try to find the last stack trace line
+    if start_match and not end_match:
+        start_pos = start_match.start()
+        # Find all stack trace lines
+        stack_trace_matches = list(re.finditer(STACK_TRACE_END_PATTERN, container_output[start_pos:]))
+        if stack_trace_matches:
+            # Use the last stack trace line as the end point (plus some buffer)
+            last_match = stack_trace_matches[-1]
+            end_pos = (
+                # Find the position after the last stack trace match
+                start_pos + last_match.end()
+            )
+            # Find the next newline after the last stack trace match
+            next_newline_pos = container_output.find("\n", end_pos)
+            if next_newline_pos != -1:
+                end_pos = next_newline_pos + 1  # Include the newline
+            end_pos = min(end_pos, len(container_output))
+            return container_output[start_pos:end_pos]
+
+    # If we can't find a complete report, check if any sanitizer indicators exist
+    if any(indicator in container_output for indicator in SANITIZER_ERROR_PATTERNS):
+        # Extract context around the first indicator found
+        for indicator in SANITIZER_ERROR_PATTERNS:
+            if indicator in container_output:
+                idx = container_output.find(indicator)
+                # Get up to 1000 characters before and after the indicator
+                start_idx = max(0, idx - 1000)
+                end_idx = min(len(container_output), idx + 1000)
+                return container_output[start_idx:end_idx]
+
+    return None
+
+
+####################### SEC-BENCH #######################
 
 
 class AbstractInstanceSource(ABC):
@@ -188,14 +265,20 @@ class SimpleBatchInstance(BaseModel):
         )
 
     @classmethod
-    def from_secbench(cls, instance: dict[str, Any]) -> Self:
+    def from_sec_bench(cls, instance: dict[str, Any], type: Literal["secb_patch", "secb_poc"] = "secb_patch") -> Self:
         """Convert instances from the secbench dataset to the `SimpleBatchInstance` format."""
         iid = instance["instance_id"]
         # Get work_dir from instance
         work_dir = _normalize_work_dir(instance["work_dir"])
-        image_name = f"{SECB_IMAGE_PREFIX}.{iid}:{SECB_IMAGE_TAG}"
-        bug_description = instance["bug_description"]
-        problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\n<uploaded_files>\n{work_dir}\n</uploaded_files>\n\nI've uploaded a code repository in the directory `{work_dir}`. Your task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
+        if type == "secb_patch":
+            image_name = f"{SECB_IMAGE_PREFIX}.{iid}:patch"
+            bug_description = instance["bug_description"]
+        elif type == "secb_poc":
+            image_name = f"{SECB_IMAGE_PREFIX}.{iid}:poc"
+            bug_description = extract_sanitizer_report(instance["bug_description"])
+
+        # problem_statement = f"\n--------REPORT START--------\n{bug_description}\n--------REPORT END--------\n\n<uploaded_files>\n{work_dir}\n</uploaded_files>\n\nI've uploaded a code repository in the directory `{work_dir}`. Your task is to make the minimal changes to non-tests files in the `{work_dir}` repository directory to ensure the crash points specified in the sanitizer report are not triggered."
+        problem_statement = f"<uploaded_files>\n{work_dir}\n</uploaded_files>\nI've uploaded a code repository in the directory `{work_dir}`. Consider the following issue description:\n\n<issue_description>\n{bug_description}\n</issue_description>\n\n"
 
         return cls(
             image_name=image_name,
@@ -364,7 +447,7 @@ class ExpertInstancesFromFile(BaseModel, AbstractInstanceSource):
         return self.path.stem
 
 
-class SecBenchInstances(BaseModel, AbstractInstanceSource):
+class SecBenchPatchInstances(BaseModel, AbstractInstanceSource):
     """Load instances from SecBench."""
 
     dataset_name: str
@@ -380,7 +463,7 @@ class SecBenchInstances(BaseModel, AbstractInstanceSource):
     shuffle: bool = False
     """Shuffle the instances (before filtering and slicing)."""
 
-    type: Literal["secbench"] = "secbench"
+    type: Literal["secb_patch"] = "secb_patch"
     """Discriminator for (de)serialization/CLI. Do not change."""
 
     deployment: DeploymentConfig = Field(
@@ -394,7 +477,7 @@ class SecBenchInstances(BaseModel, AbstractInstanceSource):
         instances = []
         for instance in ds:
             try:
-                si = SimpleBatchInstance.from_secbench(instance)
+                si = SimpleBatchInstance.from_sec_bench(instance, type="secb_patch")
                 instances.append(si.to_full_batch_instance(self.deployment))
             except ValueError as e:
                 logger.error(
@@ -406,9 +489,59 @@ class SecBenchInstances(BaseModel, AbstractInstanceSource):
 
     @property
     def id(self) -> str:
-        return f"secbench_{self.split}"
+        return f"secb_patch_{self.split}"
+
+
+class SecBenchPocInstances(BaseModel, AbstractInstanceSource):
+    """Load instances from SecBench."""
+
+    dataset_name: str
+    """Name of the HuggingFace dataset. Same as when using `datasets.load_dataset`."""
+    split: str = "test"
+    filter: str = ".*"
+    """Regular expression to filter the instances by instance id."""
+    slice: str = ""
+    """Select only a slice of the instances (after filtering by `filter`).
+    Possible values are stop or start:stop or start:stop:step.
+    (i.e., it behaves exactly like python's list slicing `list[slice]`).
+    """
+    shuffle: bool = False
+    """Shuffle the instances (before filtering and slicing)."""
+
+    type: Literal["secb_poc"] = "secb_poc"
+    """Discriminator for (de)serialization/CLI. Do not change."""
+
+    deployment: DeploymentConfig = Field(
+        default_factory=lambda: DockerDeploymentConfig(image="python:3.11"),
+    )
+
+    def get_instance_configs(self) -> list[BatchInstance]:
+        from datasets import load_dataset
+
+        ds: list[dict[str, Any]] = load_dataset(self.dataset_name, split=self.split)  # type: ignore
+        instances = []
+        for instance in ds:
+            try:
+                si = SimpleBatchInstance.from_sec_bench(instance, type="secb_poc")
+                instances.append(si.to_full_batch_instance(self.deployment))
+            except ValueError as e:
+                logger.error(
+                    "Skipping instance %s due to docker build failure: %s",
+                    instance.get("instance_id"),
+                    e,
+                )
+        return _filter_batch_items(instances, filter_=self.filter, slice_=self.slice, shuffle=self.shuffle)
+
+    @property
+    def id(self) -> str:
+        return f"secb_poc_{self.split}"
 
 
 BatchInstanceSourceConfig = (
-    InstancesFromHuggingFace | InstancesFromFile | SWEBenchInstances | ExpertInstancesFromFile | SecBenchInstances
+    InstancesFromHuggingFace
+    | InstancesFromFile
+    | SWEBenchInstances
+    | ExpertInstancesFromFile
+    | SecBenchPatchInstances
+    | SecBenchPocInstances
 )
