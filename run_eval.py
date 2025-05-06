@@ -130,7 +130,7 @@ def run_evaluation_single(instance_id: str, model_patch: str, dataset_dict: dict
     logger.info(f"Using docker image: {docker_image} for instance {instance_id}")
 
     # Create a temporary directory to hold the patch file.
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="secb.eval.") as tmp_dir:
         patch_file_path = Path(tmp_dir) / "model_patch.diff"
         # Remove any trailing "%" characters from model_patch before writing to file.
         with patch_file_path.open("w") as pf:
@@ -141,6 +141,9 @@ def run_evaluation_single(instance_id: str, model_patch: str, dataset_dict: dict
 
         # Create a multi-line bash script to execute the tasks in three steps and track each result.
         script = """
+# Copy patch from mounted directory to /testcase without overwriting existing files
+cp /tmp/model_patch.diff /testcase/
+
 echo "Step 1: Git apply"
 secb patch
 ret=$?
@@ -181,7 +184,7 @@ fi
                 command=["bash", "-c", script],
                 working_dir=work_dir,
                 # security_opt=["seccomp=unconfined"],
-                volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
+                volumes={tmp_dir: {"bind": "/tmp", "mode": "rw"}},
             )
         except docker_errors.ImageNotFound:
             logger.info(f"Image {docker_image} not found locally. Attempting to pull...")
@@ -194,7 +197,7 @@ fi
                     command=["bash", "-c", script],
                     working_dir=work_dir,
                     # security_opt=["seccomp=unconfined"],
-                    volumes={tmp_dir: {"bind": "/testcase", "mode": "rw"}},
+                    volumes={tmp_dir: {"bind": "/tmp", "mode": "rw"}},
                 )
             except Exception as e:
                 error_msg = f"Failed to pull image {docker_image}: {str(e)}"
@@ -224,7 +227,7 @@ fi
             )
 
         container.start()
-        exit_result = container.wait()
+        exit_result = container.wait(timeout=600)
         logs = container.logs()
         container.remove()
 
@@ -373,7 +376,7 @@ def interpret_results(results: list[EvaluationResult], mode: str) -> list[PatchR
         if not result.git_patch:
             # No patch provided
             step_reason = "The model failed to submit a patch. Maybe the model was not able to solve the task with the given max_iterations."
-        elif result.exit_code == 0 and result.step3_executed and not result.is_timeout:
+        elif result.exit_code == 0 and result.step3_executed and not result.is_timeout and not result.sanitizer_report:
             # Strict success: exit code is 0 (success in all modes)
             success = True
             step_reason = "Patch applied, compiled, and run successfully."
@@ -387,6 +390,7 @@ def interpret_results(results: list[EvaluationResult], mode: str) -> list[PatchR
             and result.expected_exit_code is not None
             and result.exit_code == result.expected_exit_code
             and result.step3_executed
+            and not result.sanitizer_report
             and not result.is_timeout
         ):
             # Medium success: exit code matches dataset exit_code
