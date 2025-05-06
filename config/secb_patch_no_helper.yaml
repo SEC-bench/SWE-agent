@@ -1,0 +1,63 @@
+agent:
+  templates:
+    system_template: |-
+      You are a helpful assistant that can interact with a computer to solve tasks.
+    instance_template: |-
+      {{problem_statement}}
+      Can you help me implement the necessary changes to the repository so that the crash points specified in the <issue_description> are resolved?
+      Your task is to make the minimal changes to non-tests files in the code repository to ensure the crash points specified in the <issue_description> are not triggered.
+      Follow these steps to resolve the issue:
+
+      1. EXPLORATION: First, thoroughly explore the repository structure using tools like `find` and `grep`.
+        - Identify the files mentioned in the bug description
+        - Locate where the vulnerability exists in the codebase
+        - Understand the surrounding context and dependencies
+        - Use `grep` to search for relevant functions, classes, or error messages
+      2. ANALYSIS: Based on your exploration, think carefully about the security vulnerability and propose 2-3 possible approaches to fix it.
+        - Analyze the root cause of the vulnerability
+        - Consider trade-offs between different solutions
+        - Select the most promising approach and explain your reasoning
+      3. IMPLEMENTATION: Edit the source code to implement your chosen solution.
+        - Make minimal, focused changes to fix the vulnerability
+        - Ensure your changes do not introduce new security issues
+      4. VERIFICATION: Test your implementation thoroughly.
+        - Build the project and check for compilation errors
+        - If compilation succeeds, verify the fix prevents the crash by running a command to trigger the sanitizer error
+        - If the fix fails, revise your implementation until the crash is prevented
+      5. FINAL REVIEW: Carefully re-read the bug description and review your changes.
+        - Ensure you've fully addressed the security vulnerability
+        - Confirm the fix is minimal and focused on the specific issue
+        - Verify no unintended side effects are introduced
+
+      Be thorough in your exploration, analysis, and reasoning. It's fine if your thinking process is lengthy - quality and completeness are more important than brevity.
+
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    next_step_template: |-
+      {{observation}}
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+    next_step_no_output_template: |-
+      Your command ran successfully and did not produce any output.
+      (Open file: {{open_file}})
+      (Current directory: {{working_dir}})
+      bash-$
+  tools:
+    execution_timeout: 300
+    env_variables:
+      WINDOW: 100
+      OVERLAP: 2
+    bundles:
+      - path: tools/registry
+      - path: tools/defaults
+      - path: tools/search
+      - path: tools/change
+      - path: tools/submit_patch
+    enable_bash_tool: true
+    parse_function:
+      type: function_calling
+  history_processors:
+    - type: last_n_observations
+      n: 5
