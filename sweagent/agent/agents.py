@@ -842,11 +842,15 @@ class DefaultAgent(AbstractAgent):
         # Let us manually run the submission command and collect the output
         repo_name = "/"
         if self._env.repo is not None:
-            repo_name = f"/{self._env.repo.repo_name}"
+            repo_name = f"{self._env.repo.repo_name}"
         # submission_command = "git add -A && git diff --cached ':(exclude)*.dep' ':(exclude)*.yml' ':(exclude)*.md' ':(exclude)*.txt' > /root/model.patch"
-        submission_command = (
-            "git add -A && git diff --cached '*.c' '*.cpp' '*.h' '*.hpp' '*.cc' '*.hh' > /root/model.patch"
-        )
+        # submission_command = (
+        #     "git add -A && git diff --cached '*.c' '*.cpp' '*.h' '*.hpp' '*.cc' '*.hh' > /root/model.patch"
+        # )
+        if "submit_poc" in [bundle.path.name for bundle in self.tools.config.bundles]:
+            submission_command = "git add -A && git diff --cached > /root/model.patch && tar --exclude='base_commit_hash' --exclude='model_patch.diff' -czf /root/poc.tar.gz -C /testcase . && cat /root/poc.tar.gz | base64 -w 0 > /root/poc.tar.gz.base64"
+        else:
+            submission_command = "git add -A && git diff --cached > /root/model.patch"
         self.logger.info("Executing submission command %s in %s", submission_command, repo_name)
         try:
             self._env.execute_command(submission_command, check=True, cwd=repo_name)
@@ -877,7 +881,20 @@ class DefaultAgent(AbstractAgent):
         if is_submission or force_submission:
             assert self._env is not None
             try:
-                submission = self._env.read_file("/root/model.patch", encoding="utf-8", errors="backslashreplace")
+                if "submit_poc" in [bundle.path.name for bundle in self.tools.config.bundles]:
+                    poc_artifacts = self._env.read_file(
+                        "/root/poc.tar.gz.base64", encoding="utf-8", errors="backslashreplace"
+                    )
+                    if (
+                        poc_artifacts.strip() != ""
+                        # and poc_artifacts.strip()
+                        # != "H4sIAAAAAAAAA+3OsQ3DMAwEQI6iCRIpAKV5MoEBx94/gksXTuVUd80TTxZ8PON2dRqZR07nPOaWtfbWX3202Y/RMkre/1rE/tneaymxLst2dfdrDwAAAAAAAAAAAH/0BUb/I/wAKAAA"
+                    ):
+                        submission = poc_artifacts
+                    else:
+                        submission = ""
+                else:
+                    submission = self._env.read_file("/root/model.patch", encoding="utf-8", errors="backslashreplace")
             except FileNotFoundError:
                 self.logger.warning("Submission file not found, no submission was made")
                 return step
