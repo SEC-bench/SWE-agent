@@ -36,7 +36,6 @@ agent:
         - Repeat verification until the sanitizer error is successfully triggered
 
       NOTE THAT your PoC should be triggered by `secb repro` command which means that the PoC filename should be the same as the one specified in the `repro` function of `/usr/local/bin/secb` script.
-      BEFORE FINISHING YOUR TASK, you should check if your PoC files are correctly saved in `/testcase` directory and can be reproduced by `secb repro` command.
       Be thorough in your exploration, analysis, and reasoning. It's fine if your thinking process is lengthy - quality and completeness are more important than brevity.
 
       (Open file: {{open_file}})
