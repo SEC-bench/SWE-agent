@@ -21,16 +21,23 @@ if [ "$mode" == "infer" ]; then
     # ./run_infer.sh -m sonnet -f ./config/secbench_no_helper.yaml -c 1.5 -t 0.0 -s eval -l :30 -n 75 -w 2
 
     ## Data contamination
-    # ./run_infer.sh -m haiku -f ./config/secbench.yaml -c 1.0 -t 0.0 -s after -l :15 -n 75 -w 2
-    # ./run_infer.sh -m haiku -f ./config/secbench.yaml -c 1.0 -t 0.0 -s before -l :15 -n 75 -w 2
-    # ./run_infer.sh -m 4o -f ./config/secbench.yaml -c 1.0 -t 0.0 -s after -l :15 -n 75 -w 1
-    # ./run_infer.sh -m 4o -f ./config/secbench.yaml -c 1.0 -t 0.0 -s before -l :15 -n 75 -w 1
+    # ./run_infer.sh -m haiku -t secb_patch -f ./config/secb_patch.yaml -c 1.0 -t 0.0 -s after -l :15 -n 75 -w 2
+    # ./run_infer.sh -m haiku -t secb_patch -f ./config/secb_patch.yaml -c 1.0 -t 0.0 -s before -l :15 -n 75 -w 2
+    # ./run_infer.sh -m 4o -t secb_patch -f ./config/secb_patch.yaml -c 1.0 -t 0.0 -s after -l :15 -n 75 -w 1
+    # ./run_infer.sh -m 4o -t secb_patch -f ./config/secb_patch.yaml -c 1.0 -t 0.0 -s before -l :15 -n 75 -w 1
+
+    # ./run_infer.sh -m haiku -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s after -l :15 -n 75 -w 2
+    # ./run_infer.sh -m haiku -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s before -l :15 -n 75 -w 2
+    # ./run_infer.sh -m 4o -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s after -l :15 -n 75 -w 1
+    # ./run_infer.sh -m 4o -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s before -l :15 -n 75 -w 1
 
     ## PoC generation
-    ./run_infer.sh -m sonnet -t secb_poc -f ./config/secb_poc.yaml -c 1.5 -e 0.0 -s eval -l :30 -n 75 -w 2
+    ./run_infer.sh -m sonnet -t secb_poc -f ./config/secb_poc.yaml -c 1.5 -e 0.0 -s eval -l 100:200 -n 75 -w 2
+    # ./run_infer.sh -m 4o -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s eval -l :80 -n 75 -w 2
+    # ./run_infer.sh -m o3 -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s eval -l :80 -n 75 -w 2
 
     ## Patch generation
-    # ./run_infer.sh -m sonnet -t secb_patch -f ./config/secb_patch.yaml -c 1.5 -e 0.0 -s eval -l :20 -n 75 -w 2
+    ./run_infer.sh -m sonnet -t secb_patch -f ./config/secb_patch.yaml -c 1.5 -e 0.0 -s eval -l 100:200 -n 75 -w 2
 
     ## Deprecated commands
     # ./run_infer.sh -m 4o -f ./config/secbench.yaml -c 1.0 -t 0.0 -s eval -l :80 -n 75 -w 2
