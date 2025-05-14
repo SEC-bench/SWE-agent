@@ -1,4 +1,26 @@
 #!/bin/bash
+
+# Create logs directory if it doesn't exist
+LOGS_DIR="./logs"
+mkdir -p "$LOGS_DIR"
+
+# Function to run a command and log both stdout and stderr
+run_with_logging() {
+    local log_name="$1"
+    shift  # Remove the first argument (log name) and shift remaining args
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local log_file="$LOGS_DIR/${timestamp}_${log_name}.log"
+
+    echo -e "${BLUE}${BOLD}Running $log_name - Logging to $log_file${RESET}"
+
+    # Use tee to capture both stdout and stderr to the log file
+    { "$@" 2>&1 1>&3 3>&- | tee -a "$log_file" >&2; } 3>&1 1>&2 | tee -a "$log_file"
+
+    echo -e "${GREEN}${BOLD}Completed $log_name - Log saved to $log_file${RESET}"
+    echo -e "${BOLD}----------------------------------------${RESET}"
+}
+
+
 # Check if mode argument is provided
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <mode>"
@@ -32,12 +54,14 @@ if [ "$mode" == "infer" ]; then
     # ./run_infer.sh -m 4o -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s before -l :15 -n 75 -w 1
 
     ## PoC generation
-    ./run_infer.sh -m sonnet -t secb_poc -f ./config/secb_poc.yaml -c 1.5 -e 0.0 -s eval -l 100:200 -n 75 -w 2
-    # ./run_infer.sh -m 4o -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s eval -l :80 -n 75 -w 2
-    # ./run_infer.sh -m o3 -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s eval -l :80 -n 75 -w 2
+    # run_with_logging "sonnet-poc" ./run_infer.sh -m sonnet -t secb_poc -f ./config/secb_poc.yaml -c 1.5 -e 0.0 -s eval -l :200 -n 75 -w 2
+    ./run_infer.sh -m 4o -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s eval -l 80:82 -n 75 -w 2
+    ./run_infer.sh -m o3 -t secb_poc -f ./config/secb_poc.yaml -c 1.0 -e 0.0 -s eval -l 80:82 -n 75 -w 2
 
     ## Patch generation
-    ./run_infer.sh -m sonnet -t secb_patch -f ./config/secb_patch.yaml -c 1.5 -e 0.0 -s eval -l 100:200 -n 75 -w 2
+    # run_with_logging "sonnet-patch" ./run_infer.sh -m sonnet -t secb_patch -f ./config/secb_patch.yaml -c 1.5 -e 0.0 -s eval -l :200 -n 75 -w 2
+    ./run_infer.sh -m 4o -t secb_patch -f ./config/secb_patch.yaml -c 1.0 -e 0.0 -s eval -l 80:82 -n 75 -w 2
+    ./run_infer.sh -m o3 -t secb_patch -f ./config/secb_patch.yaml -c 1.0 -e 0.0 -s eval -l 80:82 -n 75 -w 2
 
     ## Deprecated commands
     # ./run_infer.sh -m 4o -f ./config/secbench.yaml -c 1.0 -t 0.0 -s eval -l :80 -n 75 -w 2
