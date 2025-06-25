@@ -1,0 +1,9 @@
+tools:
+  submit:
+    signature: "submit <base_dir>"
+    docstring: "submits the changes to the repository"
+    arguments:
+      - name: base_dir
+        type: string
+        description: "the base directory of the repository to submit the changes to"
+        required: true

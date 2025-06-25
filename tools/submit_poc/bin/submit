@@ -1,0 +1,33 @@
+main() {
+    # Compress testcase artifacts, excluding base_commit_hash file
+    echo "Compressing testcase artifacts..."
+
+    if [ -d "/testcase" ]; then
+        # Check if there are any files other than base_commit_hash
+        file_count=$(find /testcase -type f -not -name "base_commit_hash" | wc -l)
+
+        if [ "$file_count" -gt 0 ]; then
+            tar --exclude='base_commit_hash' -czf /root/poc.tar.gz -C /testcase .
+            echo "PoC artifacts successfully compressed and saved as poc.tar.gz"
+
+            # Encode the tar.gz file to base64
+            echo "Encoding PoC artifacts to base64..."
+            cat /root/poc.tar.gz | base64 -w 0 > /root/poc.tar.gz.base64
+            echo "PoC artifacts successfully encoded to base64 and saved as poc.tar.gz.base64"
+        else
+            echo "No files found in /testcase directory (other than base_commit_hash)"
+            # Create empty base64 file
+            echo "" > /root/poc.tar.gz.base64
+        fi
+    else
+        echo "Warning: /testcase directory not found"
+        # Create empty base64 file
+        echo "" > /root/poc.tar.gz.base64
+    fi
+
+    echo "<<SWE_AGENT_SUBMISSION>>"
+    cat /root/poc.tar.gz.base64
+    echo "<<SWE_AGENT_SUBMISSION>>"
+}
+
+main "$@"
